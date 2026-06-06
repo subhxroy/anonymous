@@ -11,7 +11,7 @@ service cloud.firestore {
     
     function isValidMessage(data) {
       return data.keys().hasAll(['content', 'createdAt']) && 
-             data.keys().size() <= 12 &&
+             data.keys().size() <= 16 &&
              data.content is string && 
              data.content.size() > 0 && 
              data.content.size() <= 10000 &&

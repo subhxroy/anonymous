@@ -30,10 +30,11 @@ export default function MessageView() {
   const [isPasswordProtected, setIsPasswordProtected] = useState(false);
   const [password, setPassword] = useState('');
   const [isPasswordVerified, setIsPasswordVerified] = useState(false);
-  const [decoyContent, setDecoyContent] = useState<string | null>(null);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [tempCachedData, setTempCachedData] = useState<any>(null);
+  const [isDecoySession, setIsDecoySession] = useState(false);
+  const [isBurning, setIsBurning] = useState(false);
 
   // Attachments
   const [attachmentMeta, setAttachmentMeta] = useState<any>(null);
@@ -158,6 +159,7 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
                 if (parsed.duration) setInitialDuration(parsed.duration);
                 if (parsed.attachment) setAttachmentMeta(parsed.attachment);
                 if (parsed.holdToReveal) setIsHoldToReveal(parsed.holdToReveal);
+                if (parsed.isDecoySession) setIsDecoySession(true);
               } catch { fetchedContent = cached; expiresAt = Date.now() + 60000; }
             } else {
               setErrorType('destroyed');
@@ -167,19 +169,19 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
           } else {
             setIsPasswordProtected(data.isPasswordProtected || false);
 
-            let decryptedDecoy = '';
-            if (data.decoy && secretKey) {
-              try {
-                const db2 = CryptoJS.AES.decrypt(data.decoy, secretKey);
-                decryptedDecoy = db2.toString(CryptoJS.enc.Utf8);
-                if (decryptedDecoy) setDecoyContent(decryptedDecoy);
-              } catch {}
-            }
-
             if (data.isPasswordProtected) {
-              setTempCachedData({ content: data.content, duration: data.duration || 60, secretKey, attachment, holdToReveal: data.holdToReveal || false });
-              if (decryptedDecoy) { setContent(decryptedDecoy); setIsLoading(false); return; }
-              else { setIsPasswordModalOpen(true); setIsLoading(false); return; }
+              setTempCachedData({ 
+                content: data.content, 
+                duration: data.duration || 60, 
+                secretKey, 
+                attachment, 
+                holdToReveal: data.holdToReveal || false,
+                decoyPayload: data.decoy || '',
+                hasDecoy: !!data.hasDecoy
+              });
+              setIsPasswordModalOpen(true);
+              setIsLoading(false);
+              return;
             }
 
             if (secretKey) {
@@ -208,6 +210,7 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
               expiresAt = parsed.expiresAt;
               if (parsed.attachment) setAttachmentMeta(parsed.attachment);
               if (parsed.holdToReveal) setIsHoldToReveal(parsed.holdToReveal);
+              if (parsed.isDecoySession) setIsDecoySession(true);
             } catch { fetchedContent = cached; expiresAt = Date.now() + 60000; }
           }
         }
@@ -233,39 +236,90 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
     e.preventDefault();
     if (!id || !tempCachedData) return;
     setPasswordError(null);
-    const { content: encryptedText, duration, secretKey, attachment, holdToReveal: htr } = tempCachedData;
+    const { content: encryptedText, duration, secretKey, attachment, holdToReveal: htr, decoyPayload, hasDecoy } = tempCachedData;
     const encryptionKey = secretKey + password;
+    
+    let decryptedText = '';
+    let decryptedDecoyText = '';
+    let isDecoy = false;
+
     try {
-      const bytes = CryptoJS.AES.decrypt(encryptedText, encryptionKey);
-      const decryptedText = bytes.toString(CryptoJS.enc.Utf8);
-      if (!decryptedText) { setPasswordError('Invalid password. Decryption failed.'); return; }
+      // 1. Try real decryption
+      try {
+        const bytes = CryptoJS.AES.decrypt(encryptedText, encryptionKey);
+        decryptedText = bytes.toString(CryptoJS.enc.Utf8);
+      } catch {}
+
+      // 2. Try decoy decryption if real failed and decoy exists
+      if (!decryptedText && hasDecoy && decoyPayload) {
+        try {
+          const decoyBytes = CryptoJS.AES.decrypt(decoyPayload, encryptionKey);
+          decryptedDecoyText = decoyBytes.toString(CryptoJS.enc.Utf8);
+          if (decryptedDecoyText) {
+            isDecoy = true;
+          }
+        } catch {}
+      }
+
+      const finalDecryptedText = decryptedText || decryptedDecoyText;
+      if (!finalDecryptedText) {
+        setPasswordError('Invalid password. Decryption failed.');
+        return;
+      }
+
       const expiresAt = Date.now() + duration * 1000;
-      sessionStorage.setItem(`msg_${id}`, JSON.stringify({ content: decryptedText, expiresAt, attachment, duration, holdToReveal: htr }));
-      if (attachment) setAttachmentMeta(attachment);
-      setContent(decryptedText);
+      sessionStorage.setItem(`msg_${id}`, JSON.stringify({ 
+        content: finalDecryptedText, 
+        expiresAt, 
+        attachment: isDecoy ? null : attachment, 
+        duration, 
+        holdToReveal: htr,
+        isDecoySession: isDecoy
+      }));
+
+      if (isDecoy) {
+        setIsDecoySession(true);
+        setAttachmentMeta(null);
+      } else {
+        setIsDecoySession(false);
+        if (attachment) {
+          setAttachmentMeta(attachment);
+          loadAndDecryptAttachment(attachment, encryptionKey);
+        }
+      }
+
+      setContent(finalDecryptedText);
       setTimeLeft(duration);
       setInitialDuration(duration);
       setIsHoldToReveal(htr || false);
       setIsPasswordVerified(true);
       setIsPasswordModalOpen(false);
-      if (attachment) loadAndDecryptAttachment(attachment, encryptionKey);
+
       const docRef = doc(db, 'messages', id);
       await updateDoc(docRef, { content: '', status: 'read', openedAt: Date.now() });
-    } catch { setPasswordError('Invalid password. Decryption failed.'); }
+    } catch (err) {
+      setPasswordError('Invalid password. Decryption failed.');
+    }
   };
 
   /* ── Timer ──────────────────────────────────── */
   useEffect(() => {
     if (timeLeft === null) return;
     if (timeLeft <= 0) {
-      setContent(null); setErrorType('expired'); setError('Time expired. The message has self-destructed.');
-      setIsRevealed(false);
-      if (id) {
-        sessionStorage.removeItem(`msg_${id}`);
-        deleteDoc(doc(db, 'messages', id)).catch(console.error);
-        deleteObject(ref(storage, `attachments/${id}`)).catch(() => {});
-      }
-      return;
+      setIsBurning(true);
+      const burnTimeout = setTimeout(() => {
+        setContent(null); 
+        setErrorType('expired'); 
+        setError('This whisper no longer exists.');
+        setIsRevealed(false);
+        setIsBurning(false);
+        if (id) {
+          sessionStorage.removeItem(`msg_${id}`);
+          deleteDoc(doc(db, 'messages', id)).catch(console.error);
+          deleteObject(ref(storage, `attachments/${id}`)).catch(() => {});
+        }
+      }, 800);
+      return () => clearTimeout(burnTimeout);
     }
     const timerId = setInterval(() => setTimeLeft(prev => prev !== null ? prev - 1 : null), 1000);
     return () => clearInterval(timerId);
@@ -452,12 +506,6 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
                     className="w-full bg-zinc-900 dark:bg-zinc-100 hover:bg-black dark:hover:bg-white text-white dark:text-zinc-900 font-semibold py-3.5 rounded-full text-xs uppercase tracking-wider transition-colors active:scale-[0.98] shadow-md cursor-pointer">
                     Decrypt Whisper
                   </button>
-                  {decoyContent && (
-                    <button type="button" onClick={() => setIsPasswordModalOpen(false)}
-                      className="w-full bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-medium py-2.5 rounded-full text-xs uppercase tracking-wider transition-colors cursor-pointer">
-                      Back to Cover Message
-                    </button>
-                  )}
                 </form>
               </div>
             </motion.div>
@@ -565,7 +613,7 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
                   <button
                     id="btn-reveal-message"
                     onClick={handleReveal}
-                    disabled={isPasswordProtected && !isPasswordVerified && !decoyContent}
+                    disabled={isPasswordProtected && !isPasswordVerified}
                     className="inline-flex items-center gap-2 px-8 py-3 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold text-xs uppercase tracking-widest rounded-full hover:bg-black dark:hover:bg-white transition-all active:scale-[0.98] shadow-md cursor-pointer disabled:opacity-40"
                   >
                     Click to Continue
@@ -577,8 +625,15 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
             {/* Message content */}
             <motion.div
               className="absolute inset-0 flex items-center justify-center overflow-hidden z-10 px-4"
-              animate={{ opacity: isRevealed ? 1 : 0, filter: isRevealed ? 'blur(0px)' : 'blur(20px)', scale: isRevealed ? 1 : 0.95 }}
-              transition={{ duration: 0.35, ease: 'easeOut' }}
+              animate={{ 
+                opacity: isBurning ? 0 : (isRevealed ? 1 : 0), 
+                filter: isBurning ? 'blur(24px)' : (isRevealed ? 'blur(0px)' : 'blur(20px)'), 
+                scale: isBurning ? 0.9 : (isRevealed ? 1 : 0.95) 
+              }}
+              transition={{ 
+                duration: isBurning ? 0.8 : 0.35, 
+                ease: isBurning ? 'easeInOut' : 'easeOut' 
+              }}
             >
               <div
                 ref={scrollContainerRef}
@@ -591,16 +646,6 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
                 )}
 
                 <div className="w-full flex flex-col items-center my-auto py-8">
-                  {/* Decoy indicator */}
-                  {isPasswordProtected && !isPasswordVerified && isRevealed && decoyContent && (
-                    <div className="mb-6 px-4 py-2 rounded-full bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30 text-amber-600 dark:text-amber-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 animate-pulse z-30">
-                      <Shield className="w-3.5 h-3.5" /> Decoy Cover Active
-                      <button onClick={() => setIsPasswordModalOpen(true)}
-                        className="ml-2 px-3 py-1 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-full text-[9px] font-bold cursor-pointer">
-                        Unlock Real Message
-                      </button>
-                    </div>
-                  )}
 
                   {/* Hold-to-reveal wrapper */}
                   {content && isRevealed && (
@@ -632,7 +677,7 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
                   )}
 
                   {/* Attachment viewer */}
-                  {isRevealed && attachmentMeta && (
+                  {isRevealed && attachmentMeta && !isDecoySession && (
                     <div className="mt-6 flex flex-col items-center w-full z-10 relative">
                       {isDownloadingFile ? (
                         <div className="flex flex-col items-center gap-2 py-4">

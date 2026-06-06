@@ -83,9 +83,55 @@ export default function Home() {
   const [usePassword, setUsePassword] = useState(false);
   const [password, setPassword] = useState('');
   const [decoyMessage, setDecoyMessage] = useState('');
+  const [decoyPassword, setDecoyPassword] = useState('');
   const [holdToReveal, setHoldToReveal] = useState(false);
   const [useCustomAlias, setUseCustomAlias] = useState(false);
   const [customAlias, setCustomAlias] = useState('');
+  const [activePreset, setActivePreset] = useState<'custom' | 'casual' | 'private' | 'sensitive' | 'ultra'>('custom');
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+
+  const applyPreset = (preset: 'casual' | 'private' | 'sensitive' | 'ultra') => {
+    setActivePreset(preset);
+    if (preset === 'casual') {
+      setExpiryDuration(300);
+      setUsePassword(false);
+      setHoldToReveal(false);
+    } else if (preset === 'private') {
+      setExpiryDuration(60);
+      setUsePassword(true);
+      setHoldToReveal(false);
+      setTimeout(() => passwordInputRef.current?.focus(), 150);
+    } else if (preset === 'sensitive') {
+      setExpiryDuration(30);
+      setUsePassword(true);
+      setHoldToReveal(false);
+      setTimeout(() => passwordInputRef.current?.focus(), 150);
+    } else if (preset === 'ultra') {
+      setExpiryDuration(10);
+      setUsePassword(true);
+      setHoldToReveal(true);
+      setTimeout(() => passwordInputRef.current?.focus(), 150);
+    }
+  };
+
+  const calculatePrivacyScore = () => {
+    let score = 50; // Base score
+    if (usePassword) score += 15;
+    if (decoyMessage.trim() && decoyPassword.trim()) score += 10;
+    if (holdToReveal) score += 15;
+    if (expiryDuration === 10) score += 10;
+    else if (expiryDuration === 30) score += 8;
+    else if (expiryDuration === 60) score += 5;
+    else if (expiryDuration === 300) score += 2;
+    return Math.min(score, 100);
+  };
+
+  const getPrivacyLabel = (score: number) => {
+    if (score < 70) return { label: 'Basic' };
+    if (score < 85) return { label: 'Private' };
+    if (score < 95) return { label: 'Secure' };
+    return { label: 'Ultra Secure' };
+  };
 
   // Chat Settings
   const [useCustomRoomCode, setUseCustomRoomCode] = useState(false);
@@ -199,8 +245,25 @@ export default function Home() {
     e.preventDefault();
     if (!content.trim()) return;
     requestNotificationPermission();
-    setIsSubmitting(true);
 
+    if (usePassword) {
+      if (!password.trim()) {
+        triggerAlert('Password Required', 'Please set a password or disable password protection.');
+        return;
+      }
+      if (decoyMessage.trim()) {
+        if (!decoyPassword.trim()) {
+          triggerAlert('Decoy Password Required', 'Please set a decoy password to go with your decoy message.');
+          return;
+        }
+        if (password.trim() === decoyPassword.trim()) {
+          triggerAlert('Password Conflict', 'Real password and Decoy password must be different.');
+          return;
+        }
+      }
+    }
+
+    setIsSubmitting(true);
     try {
       const secretKey = CryptoJS.lib.WordArray.random(32).toString();
       const encryptionKey = secretKey + (usePassword ? password : '');
@@ -222,6 +285,7 @@ export default function Home() {
         docId = aliasClean;
       }
 
+      const hasDecoyValue = usePassword && !!decoyMessage.trim() && !!decoyPassword.trim();
       const basePayload = {
         content: encryptedContent,
         createdAt: serverTimestamp(),
@@ -231,7 +295,8 @@ export default function Home() {
         isPasswordProtected: usePassword,
         holdToReveal: holdToReveal,
         hasAttachment: false,
-        decoy: usePassword && decoyMessage.trim() ? CryptoJS.AES.encrypt(decoyMessage.trim(), secretKey).toString() : '',
+        decoy: hasDecoyValue ? CryptoJS.AES.encrypt(decoyMessage.trim(), secretKey + decoyPassword.trim()).toString() : '',
+        hasDecoy: hasDecoyValue,
       };
 
       let docRef;
@@ -313,9 +378,10 @@ export default function Home() {
 
   const resetForm = () => {
     setShareLink(''); setContent(''); setCopied(false); setMessageId('');
-    setMessageStatus('unread'); setPassword(''); setDecoyMessage('');
+    setMessageStatus('unread'); setPassword(''); setDecoyMessage(''); setDecoyPassword('');
     setUsePassword(false); setSelectedFile(null); setHoldToReveal(false);
     setUseCustomAlias(false); setCustomAlias('');
+    setActivePreset('custom');
   };
 
   /* ── Chat ───────────────────────────────────── */
@@ -582,6 +648,32 @@ export default function Home() {
                       </div>
                     </div>
 
+                    {/* Presets */}
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Security Presets</label>
+                      <div className="grid grid-cols-4 gap-1 bg-zinc-100/60 dark:bg-zinc-800/60 p-1 rounded-2xl border border-zinc-200/40 dark:border-zinc-700/40">
+                        {([
+                          { id: 'casual', label: 'Casual' },
+                          { id: 'private', label: 'Private' },
+                          { id: 'sensitive', label: 'Sensitive' },
+                          { id: 'ultra', label: 'Ultra Secret' }
+                        ] as const).map(p => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => applyPreset(p.id)}
+                            className={`py-2 px-1 rounded-xl text-[9px] sm:text-[10px] font-bold transition-all cursor-pointer text-center truncate ${
+                              activePreset === p.id
+                                ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-sm border border-zinc-200/50 dark:border-zinc-800'
+                                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
                       {/* Textarea */}
                       <div className="relative group">
@@ -651,7 +743,7 @@ export default function Home() {
                           </div>
                           <div className="flex bg-zinc-200/60 dark:bg-zinc-800/60 p-0.5 rounded-full border border-zinc-200/40 dark:border-zinc-700/40">
                             {([10, 30, 60, 300] as const).map(d => (
-                              <button key={d} type="button" onClick={() => setExpiryDuration(d)}
+                              <button key={d} type="button" onClick={() => { setExpiryDuration(d); setActivePreset('custom'); }}
                                 className={`px-2.5 sm:px-3.5 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer ${expiryDuration === d ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}`}>
                                 {d === 300 ? '5m' : `${d}s`}
                               </button>
@@ -666,23 +758,33 @@ export default function Home() {
                               <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 block mb-0.5">Password Protection</label>
                               <span className="text-[10px] text-zinc-400">Require a password to decrypt.</span>
                             </div>
-                            <button type="button" onClick={() => setUsePassword(!usePassword)}
+                            <button type="button" onClick={() => { setUsePassword(!usePassword); setActivePreset('custom'); }}
                               className={`w-11 h-6 rounded-full p-0.5 transition-colors cursor-pointer ${usePassword ? 'bg-indigo-500' : 'bg-zinc-200 dark:bg-zinc-800'}`}>
                               <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${usePassword ? 'translate-x-5' : 'translate-x-0'}`} />
                             </button>
                           </div>
                           <AnimatePresence>
                             {usePassword && (
-                              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden space-y-2">
-                                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden space-y-3">
+                                <input ref={passwordInputRef} type="password" value={password} onChange={(e) => { setPassword(e.target.value); setActivePreset('custom'); }}
                                   placeholder="Enter secure password"
                                   className="w-full bg-zinc-100/60 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-400 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400" required={usePassword} />
-                                <div className="space-y-1">
-                                  <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 block">Fake Decoy Message (Optional)</label>
-                                  <textarea value={decoyMessage} onChange={(e) => setDecoyMessage(e.target.value)}
-                                    placeholder="e.g. Hi, here are the grocery items..."
+                                
+                                <div className="space-y-2 border-t border-dashed border-zinc-200 dark:border-zinc-800 pt-3">
+                                  <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 block">Decoy Password Mode (Optional)</label>
+                                  <textarea value={decoyMessage} onChange={(e) => { setDecoyMessage(e.target.value); setActivePreset('custom'); }}
+                                    placeholder="Harmless cover message (e.g., 'Hi, here are the grocery items...')"
                                     className="w-full bg-zinc-100/60 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl text-xs outline-none focus:ring-1 focus:ring-indigo-400 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 h-16 resize-none" />
-                                  <span className="text-[9px] text-zinc-400 leading-tight block">Shows immediately without password — covers your tracks.</span>
+                                  
+                                  {decoyMessage.trim() && (
+                                    <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="space-y-1">
+                                      <input type="password" value={decoyPassword} onChange={(e) => { setDecoyPassword(e.target.value); setActivePreset('custom'); }}
+                                        placeholder="Enter decoy password"
+                                        className="w-full bg-zinc-100/60 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl text-xs outline-none focus:ring-1 focus:ring-indigo-400 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                                        required={!!decoyMessage.trim()} />
+                                      <span className="text-[8px] text-zinc-400 dark:text-zinc-500 leading-tight block">Required. Enter this password to reveal the decoy message instead of the real one.</span>
+                                    </motion.div>
+                                  )}
                                 </div>
                               </motion.div>
                             )}
@@ -695,7 +797,7 @@ export default function Home() {
                             <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 block mb-0.5">Hold to Reveal</label>
                             <span className="text-[10px] text-zinc-400">Message only visible while held. Releases on lift.</span>
                           </div>
-                          <button type="button" onClick={() => setHoldToReveal(!holdToReveal)}
+                          <button type="button" onClick={() => { setHoldToReveal(!holdToReveal); setActivePreset('custom'); }}
                             className={`w-11 h-6 rounded-full p-0.5 transition-colors cursor-pointer ${holdToReveal ? 'bg-violet-500' : 'bg-zinc-200 dark:bg-zinc-800'}`}>
                             <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${holdToReveal ? 'translate-x-5' : 'translate-x-0'}`} />
                           </button>
@@ -728,6 +830,35 @@ export default function Home() {
                           </AnimatePresence>
                         </div>
                       </div>
+
+                      {/* Privacy Score Meter */}
+                      {content.trim() && (
+                        <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="space-y-1.5 pt-1">
+                          <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider">
+                            <span className="text-zinc-400">Privacy Rating</span>
+                            <span className="text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5 font-mono">
+                              Score: {calculatePrivacyScore()}/100 · 
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] ${
+                                calculatePrivacyScore() >= 95 
+                                  ? 'bg-violet-500 text-white' 
+                                  : calculatePrivacyScore() >= 85 
+                                  ? 'bg-violet-100 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400'
+                                  : calculatePrivacyScore() >= 70
+                                  ? 'bg-indigo-100 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400'
+                                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'
+                              }`}>
+                                {getPrivacyLabel(calculatePrivacyScore()).label}
+                              </span>
+                            </span>
+                          </div>
+                          <div className="w-full h-1.5 bg-zinc-100 dark:bg-zinc-800/80 rounded-full overflow-hidden border border-zinc-200/20 dark:border-zinc-700/20">
+                            <div 
+                              className="h-full bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500 rounded-full transition-all duration-500" 
+                              style={{ width: `${calculatePrivacyScore()}%` }}
+                            />
+                          </div>
+                        </motion.div>
+                      )}
 
                       {/* Submit */}
                       <div className="flex pt-1">
@@ -1098,6 +1229,65 @@ export default function Home() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* ── Why Use Anonym ────────────────────── */}
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.45 }}
+          className="w-full mt-10 space-y-4"
+        >
+          <div className="text-center space-y-1">
+            <h2 className="text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50">Why Use Anonym?</h2>
+            <p className="text-xs text-zinc-400 dark:text-zinc-500 max-w-sm mx-auto">Temporary communication built for real-world scenarios.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {[
+              { title: 'For Students', desc: 'Secure temporary sharing of projects, links, and study credentials without saving history.' },
+              { title: 'For Freelancers', desc: 'Send API keys, server credentials, and passwords to clients safely knowing they implode on view.' },
+              { title: 'For Teams', desc: 'Short-lived operational communication. Share sensitive data in ephemeral channels.' },
+              { title: 'For Couples', desc: 'Completely private, disappearing personal messages away from permanent storage logs.' },
+              { title: 'For Journalists', desc: 'Establish temporary, secure, zero-knowledge conversations with sensitive sources.' }
+            ].map((card, idx) => (
+              <div key={card.title} className={`glass-card border border-zinc-100 dark:border-zinc-800/40 rounded-2xl p-4 sm:p-5 shadow-sm hover:translate-y-[-2px] transition-all duration-300 ${idx === 4 ? 'sm:col-span-2 max-w-md mx-auto w-full' : ''}`}>
+                <h3 className="text-xs font-bold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider mb-1.5">{card.title}</h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed font-normal">{card.desc}</p>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+
+        {/* ── Product Trust Section (WhatsApp vs Anonym) ─ */}
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+          className="w-full mt-10 space-y-4"
+        >
+          <div className="text-center space-y-1">
+            <h2 className="text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50">Zero-Trust Comparison</h2>
+            <p className="text-xs text-zinc-400 dark:text-zinc-500 max-w-sm mx-auto">How Anonym differs from mainstream messaging networks.</p>
+          </div>
+          <div className="glass-card border border-zinc-100 dark:border-zinc-800/40 rounded-2xl overflow-hidden shadow-sm">
+            <div className="grid grid-cols-3 bg-zinc-50/50 dark:bg-zinc-900/30 border-b border-zinc-100 dark:border-zinc-800/40 p-3 sm:p-4 text-[10px] uppercase font-bold tracking-wider text-zinc-400">
+              <div>Capability</div>
+              <div className="text-center">WhatsApp</div>
+              <div className="text-center text-indigo-500 dark:text-indigo-400">Anonym</div>
+            </div>
+            {[
+              { name: 'One-Time View Message', whatsapp: '❌ (Can Screenshot)', anonym: '✅ (Anti-Capture)' },
+              { name: 'Zero-Knowledge Server', whatsapp: '❌ (Metadata Logged)', anonym: '✅ (Client-Side E2E)' },
+              { name: 'Temporary Rooms', whatsapp: '❌ (Account Bound)', anonym: '✅ (No Accounts)' },
+              { name: 'Burn After Read', whatsapp: '❌ (Stored on Device)', anonym: '✅ (Wiped on Decrypt)' }
+            ].map(row => (
+              <div key={row.name} className="grid grid-cols-3 p-3 sm:p-4 border-b border-zinc-100 dark:border-zinc-800/40 text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                <div className="font-semibold text-zinc-900 dark:text-zinc-100 pr-1">{row.name}</div>
+                <div className="text-center text-zinc-400">{row.whatsapp}</div>
+                <div className="text-center font-bold text-indigo-500 dark:text-indigo-400">{row.anonym}</div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
       </main>
 
       {/* ── Footer ──────────────────────────────── */}

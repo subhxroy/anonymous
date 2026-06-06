@@ -19,15 +19,41 @@ interface ChatMessage {
 
 const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 
-const SPY_NAMES = ['Ghost', 'Spectre', 'Cipher', 'Shadow', 'Falcon', 'Phantom', 'Apex', 'Viper', 'Rogue', 'Raven'];
-const generateSpyName = (id: string) => {
+// Ghost Identity System
+const GHOST_ADJECTIVES = [
+  'Shadow', 'Silent', 'Midnight', 'Ghost', 'Dark', 'Crimson', 'Iron', 'Neon',
+  'Phantom', 'Obsidian', 'Silver', 'Void', 'Aurora', 'Hollow', 'Ember', 'Frost',
+];
+const GHOST_NOUNS = [
+  'Wolf', 'Cipher', 'Raven', 'Echo', 'Hawk', 'Spectre', 'Falcon', 'Viper',
+  'Fox', 'Cobra', 'Wraith', 'Storm', 'Blade', 'Lynx', 'Aura', 'Drift',
+];
+
+const idHashCode = (id: string): number => {
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
     hash = id.charCodeAt(i) + ((hash << 5) - hash);
   }
-  const index = Math.abs(hash) % SPY_NAMES.length;
-  const num = Math.abs(hash) % 100;
-  return `${SPY_NAMES[index]}-${num.toString().padStart(2, '0')}`;
+  return Math.abs(hash);
+};
+
+const generateSpyName = (id: string): string => {
+  const hash = idHashCode(id);
+  const adj = GHOST_ADJECTIVES[hash % GHOST_ADJECTIVES.length];
+  const noun = GHOST_NOUNS[(hash >> 4) % GHOST_NOUNS.length];
+  return `${adj} ${noun}`;
+};
+
+const generateGhostAvatar = (id: string): { gradient: string; initials: string } => {
+  const hash = idHashCode(id);
+  const hue1 = hash % 360;
+  const hue2 = (hue1 + 40 + (hash % 60)) % 360;
+  const sat = 55 + (hash % 25);
+  const lit = 45 + (hash % 15);
+  return {
+    gradient: `linear-gradient(135deg, hsl(${hue1},${sat}%,${lit}%), hsl(${hue2},${sat}%,${lit - 10}%))`,
+    initials: generateSpyName(id).split(' ').map(w => w[0]).join(''),
+  };
 };
 
 const copyToClipboard = (text: string) => {
@@ -897,10 +923,24 @@ export default function ChatView() {
                   <Users className="w-8 h-8" />
                 </div>
                 <div className="space-y-2">
-                  <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 text-xl tracking-tight">🕵️ Pick Your Spy Name</h3>
+                  <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 text-xl tracking-tight">Your Ghost Identity</h3>
                   <p className="text-zinc-500 dark:text-zinc-400 text-xs leading-relaxed">
-                    Set a custom codename for this session. Leave blank to auto-generate a random spy name.
+                    Set a custom codename, or leave blank to use your auto-generated ghost identity below.
                   </p>
+                  {/* Auto ghost identity preview */}
+                  <div className="flex items-center justify-center gap-3 py-2 px-4 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/50 dark:border-zinc-700/50">
+                    {(() => {
+                      const gid = sessionStorage.getItem(`chat_user_id_${code}`) || Math.random().toString(36).slice(2);
+                      const avatar = generateGhostAvatar(gid);
+                      const name = generateSpyName(gid);
+                      return (
+                        <>
+                          <div className="ghost-avatar w-8 h-8 text-white text-xs font-bold" style={{ background: avatar.gradient }}>{avatar.initials}</div>
+                          <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{name}</span>
+                        </>
+                      );
+                    })()}
+                  </div>
                 </div>
 
                 <form 
@@ -1035,12 +1075,25 @@ export default function ChatView() {
                   className={`flex ${isMine ? 'justify-end' : 'justify-start'} ${isSameAsPrev ? 'mt-1' : 'mt-6'}`}
                 >
                   <div className="relative group/msg max-w-[85%] sm:max-w-[70%] flex flex-col">
-                    {/* Spy Codenames */}
-                    {!isMine && !isSameAsPrev && (
-                      <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider mb-1.5 self-start select-none">
-                        {msg.senderName || generateSpyName(msg.senderId)}
-                      </span>
-                    )}
+                    {/* Ghost Identity: Avatar + Codename */}
+                    {!isMine && !isSameAsPrev && (() => {
+                      const name = msg.senderName || generateSpyName(msg.senderId);
+                      const avatar = generateGhostAvatar(msg.senderId);
+                      return (
+                        <div className="flex items-center gap-2 mb-1.5 self-start">
+                          <div
+                            className="ghost-avatar w-6 h-6 text-white text-[9px] font-bold select-none"
+                            style={{ background: avatar.gradient }}
+                            title={name}
+                          >
+                            {avatar.initials}
+                          </div>
+                          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-bold tracking-wide select-none">
+                            {name}
+                          </span>
+                        </div>
+                      );
+                    })()}
 
                     {/* Popover Backdrop */}
                     {activeReactionMsgId === msg.id && (
@@ -1137,7 +1190,7 @@ export default function ChatView() {
                 exit={{ opacity: 0, scale: 0.95 }}
                 className="flex justify-start mt-4 flex-col gap-1"
               >
-                <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider ml-2 select-none">
+                <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-bold tracking-wide ml-2 select-none">
                   {typingUsers.map(id => generateSpyName(id)).join(', ')} typing...
                 </span>
                 <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm flex items-center gap-1.5 h-[40px] w-fit">

@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} { allow read, write: if false; }
+    
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    
+    function incoming() { return request.resource.data; }
+    
+    function isValidMessage(data) {
+      return data.keys().hasAll(['content', 'createdAt']) && 
+             data.keys().size() <= 12 &&
+             data.content is string && 
+             data.content.size() > 0 && 
+             data.content.size() <= 10000 &&
+             data.createdAt == request.time;
+    }
+    
+    match /messages/{messageId} {
+      allow get: if isValidId(messageId);
+      allow create: if isValidId(messageId) && isValidMessage(incoming());
+      allow update: if isValidId(messageId);
+      allow delete: if isValidId(messageId);
+    }
+
+    match /rooms/{roomId} {
+      allow read, write: if roomId.matches('^[a-zA-Z0-9_\\-]{4,20}$');
+    }
+    
+    match /rooms/{roomId}/messages/{messageId} {
+      allow read, write: if roomId.matches('^[a-zA-Z0-9_\\-]{4,20}$');
+    }
+  }
+}

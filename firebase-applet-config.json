@@ -1,0 +1,10 @@
+{
+  "projectId": "meatdae-2nd",
+  "appId": "1:269779649963:web:9da7c923d522163b48beee",
+  "apiKey": "AIzaSyB3lDeUASVt_lcPuBCP7IqUKr7HQ8mZ9O8",
+  "authDomain": "meatdae-2nd.firebaseapp.com",
+  "storageBucket": "meatdae-2nd.firebasestorage.app",
+  "messagingSenderId": "269779649963",
+  "measurementId": "G-04TGS2SZ80",
+  "firestoreDatabaseId": "meatdae2nd"
+}

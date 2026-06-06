@@ -1,0 +1,26 @@
+{
+  "entities": {
+    "Message": {
+      "title": "Message",
+      "description": "An anonymous message.",
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string",
+          "description": "The message content."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["content", "createdAt"]
+    }
+  },
+  "firestore": {
+    "messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Stores anonymous messages that can be read via direct ID."
+    }
+  }
+}

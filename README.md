@@ -67,8 +67,8 @@ Anonym operates on a strict **Zero-Knowledge** model. The server hosting the dat
 ### Installation
 1. Clone the repository:
    ```bash
-   git clone <repository-url>
-   cd anonym
+   git clone https://github.com/subhxroy/anonymous.git
+   cd anonymous
    ```
 
 2. Install the dependencies:

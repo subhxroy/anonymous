@@ -319,7 +319,7 @@ export default function VaultView() {
     }
   }, [isLoading]);
 
-  /* ── Anti-Capture logic (Window Blur) ────────── */
+  /* ── Screenshot Guard (Window Blur) ────────── */
   const forceBurnOnCapture = async () => {
     if (!id || !isSecurityReady) return;
     setItems([]);
@@ -661,7 +661,7 @@ export default function VaultView() {
       <footer className="w-full max-w-3xl mx-auto px-4 sm:px-8 pb-8 pt-4 border-t border-zinc-200/50 dark:border-zinc-800/50 mt-6 text-[10px] text-zinc-400 dark:text-zinc-500 flex flex-col md:flex-row items-center justify-between gap-4 font-medium uppercase tracking-wider shrink-0 select-none relative z-10">
         <div className="flex items-center gap-2">
           <ShieldAlert className="w-3 h-3" />
-          <span>Screen Capture Protection Active</span>
+          <span>Screenshot Guard Active</span>
         </div>
         <div className="flex items-center gap-4">
           <Link to="/privacy" className="hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">Privacy</Link>

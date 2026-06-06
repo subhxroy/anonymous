@@ -67,7 +67,12 @@ export default function PrivacyPolicy() {
                 We do not collect IP addresses, device identifiers, browser fingerprint profiles, or tracking cookies. No personal data registration is required to use Anonym.
               </p>
 
-              <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-base mt-2">5. Updates and Changes</h3>
+              <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-base mt-2">5. Screen Protection & Sandbox Limitations</h3>
+              <p>
+                Anonym employs client-side Screenshot Guard mechanisms (focus-loss window blurring, print event cancellation, and key/clipboard listeners) to help prevent unauthorized exposure of ephemeral data. However, due to browser sandbox constraints, no web application can completely block operating system-level capturing tools, hardware-level screen grabbing, or external physical photography. These guards serve as strong deterrents rather than absolute technical blockades.
+              </p>
+
+              <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-base mt-2">6. Updates and Changes</h3>
               <p>
                 We may update this policy to reflect security upgrades. Continued use of Anonym implies acceptance of zero-knowledge privacy protocols.
               </p>

@@ -1275,7 +1275,7 @@ export default function Home() {
               <div className="text-center text-indigo-500 dark:text-indigo-400">Anonym</div>
             </div>
             {[
-              { name: 'One-Time View Message', whatsapp: '❌ (Can Screenshot)', anonym: '✅ (Anti-Capture)' },
+              { name: 'One-Time View Message', whatsapp: '❌ (Can Screenshot)', anonym: '✅ (Screenshot Guard / Blur)' },
               { name: 'Zero-Knowledge Server', whatsapp: '❌ (Metadata Logged)', anonym: '✅ (Client-Side E2E)' },
               { name: 'Temporary Rooms', whatsapp: '❌ (Account Bound)', anonym: '✅ (No Accounts)' },
               { name: 'Burn After Read', whatsapp: '❌ (Stored on Device)', anonym: '✅ (Wiped on Decrypt)' }
@@ -1296,7 +1296,7 @@ export default function Home() {
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
           <span>System Active</span>
           <span className="text-zinc-300 dark:text-zinc-800">•</span>
-          <span>Anti-Capture Enabled</span>
+          <span>Screenshot Guard Active</span>
           <span className="text-zinc-300 dark:text-zinc-800 hidden sm:inline">•</span>
           <span className="hidden sm:inline">Press ESC×2 for Panic Mode</span>
         </div>

@@ -64,7 +64,7 @@ export default function TermsOfService() {
 
               <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-base mt-2">4. Security Disclaimer</h3>
               <p>
-                While Anonym engages advanced client-side cryptography, window focus hiding, visibility blur, and screenshot alerts, we cannot guarantee absolute protection against physical photography (e.g. taking a picture of the screen with a physical camera) or customized screen-capture operating systems. Use this tool with appropriate discretion.
+                While Anonym engages client-side cryptography, window focus hiding, dynamic visibility blur, and copy/print restrictions (the "Screenshot Guard"), we cannot guarantee absolute protection against operating system-level capturing tools, virtual machines, custom web scraping setups, browser automation libraries (e.g., Puppeteer, Selenium), or physical photography (e.g., taking a picture of the monitor with a phone). All security measures run within the browser sandbox and operate under its inherent limitations. Users must exercise appropriate discretion when viewing highly sensitive content.
               </p>
 
               <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-base mt-2">5. Limitation of Liability</h3>

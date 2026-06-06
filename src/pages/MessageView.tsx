@@ -353,20 +353,53 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
     const handleVisibilityChange = () => { if (document.hidden) { setIsBlurred(true); setIsRevealed(false); reportScreenshot(); } };
     const handleWindowBlur = () => { setIsBlurred(true); setIsRevealed(false); reportScreenshot(); };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'PrintScreen' || (e.metaKey && e.shiftKey) || (e.ctrlKey && e.key === 'p') || (e.metaKey && e.key === 's')) {
+      // Intercept standard screenshots, prints, copy keys, and devtools
+      if (
+        e.key === 'PrintScreen' ||
+        (e.metaKey && e.shiftKey) ||
+        (e.ctrlKey && e.key === 'p') ||
+        (e.metaKey && e.key === 's') ||
+        e.key === 'F12' ||
+        (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
+        (e.metaKey && e.altKey && (e.key === 'i' || e.key === 'j' || e.key === 'c' || e.key === 'I' || e.key === 'J' || e.key === 'C'))
+      ) {
+        e.preventDefault();
         setIsBlurred(true); setIsRevealed(false); reportScreenshot();
       }
     };
     const handleContextMenu = (e: MouseEvent) => e.preventDefault();
+    
+    const handleCopy = (e: ClipboardEvent) => {
+      e.preventDefault();
+      setIsBlurred(true); setIsRevealed(false); reportScreenshot();
+    };
+
+    const handleBeforePrint = () => {
+      setIsBlurred(true); setIsRevealed(false); reportScreenshot();
+    };
+
+    const handleMouseLeave = () => {
+      setIsBlurred(true); setIsRevealed(false);
+    };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleWindowBlur);
     window.addEventListener('keydown', handleKeyDown);
     document.addEventListener('contextmenu', handleContextMenu);
+    document.addEventListener('copy', handleCopy);
+    document.addEventListener('cut', handleCopy);
+    window.addEventListener('beforeprint', handleBeforePrint);
+    document.addEventListener('mouseleave', handleMouseLeave);
+
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('copy', handleCopy);
+      document.removeEventListener('cut', handleCopy);
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      document.removeEventListener('mouseleave', handleMouseLeave);
     };
   }, [id, isSecurityReady]);
 
@@ -670,7 +703,7 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
                         )}
                       </div>
                     ) : (
-                      <p className="text-2xl sm:text-3xl lg:text-4xl leading-relaxed tracking-tight text-zinc-900 dark:text-zinc-100 font-normal whitespace-pre-wrap text-center mix-blend-multiply dark:mix-blend-screen pb-6">
+                      <p className="text-2xl sm:text-3xl lg:text-4xl leading-relaxed tracking-tight text-zinc-900 dark:text-zinc-100 font-normal whitespace-pre-wrap text-center mix-blend-multiply dark:mix-blend-screen pb-6 select-none">
                         {content}
                       </p>
                     )
@@ -755,7 +788,7 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
       <footer className="w-full max-w-5xl mx-auto px-6 lg:px-12 pb-10 pt-5 border-t border-zinc-200/50 dark:border-zinc-800/50 mt-6 text-[10px] text-zinc-400 dark:text-zinc-500 flex flex-col md:flex-row items-center justify-between gap-4 font-medium uppercase tracking-wider shrink-0 select-none relative z-10">
         <div className="flex items-center gap-2">
           <ShieldAlert className="w-3 h-3" />
-          <span>Screen Capture Protection Active</span>
+          <span>Screenshot Guard Active</span>
         </div>
         <div className="flex items-center gap-4">
           <Link to="/privacy" className="hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">Privacy</Link>

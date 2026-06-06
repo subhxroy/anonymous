@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, storage } from '../firebase';
 import { collection, addDoc, serverTimestamp, doc, onSnapshot, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { Send, Copy, Check, Shield, ShieldAlert, ArrowRight, Lock, Eye, EyeOff, MessageSquare, KeyRound, Flame, Paperclip, X, Vault, Trash2, ChevronRight, Plus, Link2, MousePointerClick } from 'lucide-react';
+import { Send, Copy, Check, Shield, ShieldAlert, ArrowRight, Lock, Eye, EyeOff, MessageSquare, KeyRound, Flame, Paperclip, X, Vault, Trash2, ChevronRight, Plus, Link2, MousePointerClick, Volume2, VolumeX, Palette, Brush, RotateCcw, Download, Upload, FileText } from 'lucide-react';
 import { ref, uploadString, getDownloadURL, deleteObject } from 'firebase/storage';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useNavigate, Link } from 'react-router-dom';
 import CryptoJS from 'crypto-js';
 import ThemeToggle from '../components/ThemeToggle';
+import { SoundEffects } from '../utils/sounds';
 
 /* ── Utilities ──────────────────────────────── */
 const copyToClipboard = async (text: string): Promise<boolean> => {
@@ -89,6 +90,27 @@ export default function Home() {
   const [customAlias, setCustomAlias] = useState('');
   const [activePreset, setActivePreset] = useState<'custom' | 'casual' | 'private' | 'sensitive' | 'ultra'>('custom');
   const passwordInputRef = useRef<HTMLInputElement>(null);
+
+  // Dynamic Themes & Sounds
+  const [theme, setTheme] = useState<'amethyst' | 'emerald' | 'amber' | 'slate'>(() => (localStorage.getItem('anonym_theme') as any) || 'amethyst');
+  const [isMuted, setIsMuted] = useState(() => SoundEffects.getMuted());
+
+  // Drawing Canvas States
+  const [isDrawingModalOpen, setIsDrawingModalOpen] = useState(false);
+  const [drawingDataUrl, setDrawingDataUrl] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [brushColor, setBrushColor] = useState('#6366f1');
+  const [brushSize] = useState(4);
+
+  // Offline Local Vault States
+  const [vaultTabMode, setVaultTabMode] = useState<'create' | 'offline'>('create');
+  const [offlineText, setOfflineText] = useState('');
+  const [offlineFile, setOfflineFile] = useState<File | null>(null);
+  const [offlinePassphrase, setOfflinePassphrase] = useState('');
+  const [offlineFileToDecrypt, setOfflineFileToDecrypt] = useState<File | null>(null);
+  const [offlineDecryptPassphrase, setOfflineDecryptPassphrase] = useState('');
+  const [decryptedOfflineData, setDecryptedOfflineData] = useState<{ fileName: string; content: string } | null>(null);
 
   const applyPreset = (preset: 'casual' | 'private' | 'sensitive' | 'ultra') => {
     setActivePreset(preset);
@@ -220,6 +242,230 @@ export default function Home() {
   // Page title
   useEffect(() => { document.title = 'Anonym — Private conversations. Gone forever.'; }, []);
 
+  // Apply theme class to document element
+  useEffect(() => {
+    localStorage.setItem('anonym_theme', theme);
+    document.documentElement.className = theme === 'amethyst' ? '' : `theme-${theme}`;
+  }, [theme]);
+
+  // Audio mute toggle handler
+  const handleToggleMute = () => {
+    const newMute = SoundEffects.toggleMute();
+    setIsMuted(newMute);
+  };
+
+  // Drawing pad canvas handlers
+  useEffect(() => {
+    if (isDrawingModalOpen) {
+      setTimeout(() => {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const rect = canvas.getBoundingClientRect();
+          canvas.width = rect.width;
+          canvas.height = rect.height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+          }
+        }
+      }, 80);
+    }
+  }, [isDrawingModalOpen]);
+
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.strokeStyle = brushColor;
+    ctx.lineWidth = brushSize;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const rect = canvas.getBoundingClientRect();
+    const x = ('touches' in e) ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y = ('touches' in e) ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    setIsDrawing(true);
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = ('touches' in e) ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y = ('touches' in e) ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+  };
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  };
+
+  const saveCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dataUrl = canvas.toDataURL('image/png');
+    
+    // Convert base64 to blob to file
+    const byteString = atob(dataUrl.split(',')[1]);
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) {
+      ia[i] = byteString.charCodeAt(i);
+    }
+    const blob = new Blob([ab], { type: 'image/png' });
+    const file = new File([blob], 'secret-sketch.png', { type: 'image/png' });
+    
+    setSelectedFile(file);
+    setDrawingDataUrl(dataUrl);
+    setIsDrawingModalOpen(false);
+    showToast('Secret Sketch attached successfully!');
+  };
+
+  // Offline Vault Handlers
+  const handleOfflineEncrypt = () => {
+    if (!offlineText.trim() && !offlineFile) {
+      triggerAlert('Content Required', 'Please enter some text or drop a file to encrypt.');
+      return;
+    }
+    if (!offlinePassphrase.trim()) {
+      triggerAlert('Passphrase Required', 'Please provide an offline encryption passphrase.');
+      return;
+    }
+
+    try {
+      SoundEffects.playCreate();
+      let fileName = 'secret-note.txt';
+      
+      if (offlineFile) {
+        fileName = offlineFile.name;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64Str = (reader.result as string).split(',')[1];
+          const encrypted = CryptoJS.AES.encrypt(base64Str, offlinePassphrase).toString();
+          triggerOfflineDownload(fileName, encrypted);
+        };
+        reader.readAsDataURL(offlineFile);
+      } else {
+        const encrypted = CryptoJS.AES.encrypt(offlineText, offlinePassphrase).toString();
+        triggerOfflineDownload(fileName, encrypted);
+      }
+    } catch {
+      triggerAlert('Error', 'Offline encryption failed.');
+    }
+  };
+
+  const triggerOfflineDownload = (fileName: string, encryptedData: string) => {
+    const payload = {
+      type: 'anonym-vault',
+      version: '1.0',
+      fileName,
+      encryptedData
+    };
+    const jsonStr = JSON.stringify(payload, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName + '.anonym';
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    // Reset states
+    setOfflineText('');
+    setOfflineFile(null);
+    setOfflinePassphrase('');
+    showToast('Encrypted .anonym vault file downloaded!');
+  };
+
+  const handleOfflineDecrypt = () => {
+    if (!offlineFileToDecrypt) {
+      triggerAlert('File Required', 'Please select a .anonym file.');
+      return;
+    }
+    if (!offlineDecryptPassphrase.trim()) {
+      triggerAlert('Passphrase Required', 'Please enter the passphrase.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const payload = JSON.parse(reader.result as string);
+        if (payload.type !== 'anonym-vault') {
+          triggerAlert('Format Error', 'Invalid file. Not an anonym-vault file.');
+          return;
+        }
+
+        const bytes = CryptoJS.AES.decrypt(payload.encryptedData, offlineDecryptPassphrase);
+        const decryptedStr = bytes.toString(CryptoJS.enc.Utf8);
+
+        if (!decryptedStr) {
+          triggerAlert('Decryption Failed', 'Invalid passphrase or corrupted payload.');
+          return;
+        }
+
+        SoundEffects.playDecrypt();
+        setDecryptedOfflineData({
+          fileName: payload.fileName,
+          content: decryptedStr
+        });
+        showToast('Vault decrypted locally in-memory!');
+      } catch {
+        triggerAlert('Error', 'Decryption parse error. Verify file and passphrase.');
+      }
+    };
+    reader.readAsText(offlineFileToDecrypt);
+  };
+
+  const downloadDecryptedLocalFile = () => {
+    if (!decryptedOfflineData) return;
+    try {
+      const isTxt = decryptedOfflineData.fileName.endsWith('.txt');
+      let blob;
+      if (isTxt) {
+        blob = new Blob([decryptedOfflineData.content], { type: 'text/plain' });
+      } else {
+        const byteString = atob(decryptedOfflineData.content);
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        blob = new Blob([ab]);
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = decryptedOfflineData.fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Decrypted file saved locally!');
+    } catch {
+      triggerAlert('Error', 'Failed to restore file download.');
+    }
+  };
+
   // Current message status subscription
   useEffect(() => {
     if (!messageId) return;
@@ -345,6 +591,7 @@ export default function Home() {
       setMessageId(docRef.id);
       setMessageStatus('unread');
       setHistory(prev => [{ id: docRef!.id, link: generatedLink, createdAt: Date.now(), status: 'unread' }, ...prev]);
+      SoundEffects.playCreate();
     } catch (err) {
       console.error(err);
       triggerAlert('Error', 'Failed to securely generate the message link.');
@@ -479,6 +726,7 @@ export default function Home() {
       });
       const link = `${window.location.origin}/v/${vaultId}#${secretKey}`;
       setVaultLink(link);
+      SoundEffects.playCreate();
     } catch (err) {
       console.error(err);
       triggerAlert('Error', 'Failed to create vault.');
@@ -501,7 +749,7 @@ export default function Home() {
 
   /* ── Render ─────────────────────────────────── */
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col font-sans selection:bg-indigo-100 dark:selection:bg-indigo-900/30 transition-colors duration-200 antialiased relative overflow-x-hidden">
+    <div className={`min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col font-sans selection:bg-indigo-100 dark:selection:bg-indigo-900/30 transition-colors duration-200 antialiased relative overflow-x-hidden ${theme === 'amethyst' ? '' : 'theme-' + theme}`}>
 
       {/* Background */}
       <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
@@ -519,10 +767,33 @@ export default function Home() {
           <span className="font-bold text-sm sm:text-base tracking-tight text-zinc-900 dark:text-zinc-100">Anonym</span>
         </div>
         <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-1.5 text-[10px] tracking-widest uppercase font-semibold text-zinc-400 dark:text-zinc-500">
+          <div className="hidden lg:flex items-center gap-1.5 text-[10px] tracking-widest uppercase font-semibold text-zinc-400 dark:text-zinc-500">
             <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse" />
             E2E Encrypted
           </div>
+          
+          {/* Theme circles */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-100/80 dark:bg-zinc-900/60 border border-zinc-200/50 dark:border-zinc-800/80 rounded-full">
+            {[
+              { id: 'amethyst', color: 'bg-violet-500', label: 'Amethyst' },
+              { id: 'emerald', color: 'bg-emerald-500', label: 'Emerald' },
+              { id: 'amber', color: 'bg-amber-500', label: 'Amber' },
+              { id: 'slate', color: 'bg-zinc-500', label: 'Slate' },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => { setTheme(opt.id as any); SoundEffects.playClick(); }}
+                className={`w-3.5 h-3.5 rounded-full ${opt.color} border-2 ${theme === opt.id ? 'border-white dark:border-zinc-900 scale-110 shadow' : 'border-transparent opacity-65 hover:opacity-100'} cursor-pointer transition-all`}
+                title={opt.label}
+              />
+            ))}
+          </div>
+
+          {/* Sound toggle */}
+          <button onClick={handleToggleMute} className="w-9 h-9 flex items-center justify-center rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors border border-zinc-200/50 dark:border-zinc-800/80 cursor-pointer shadow-sm">
+            {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+          </button>
+
           <ThemeToggle />
         </div>
       </header>
@@ -716,6 +987,12 @@ export default function Home() {
                                   }
                                 }} />
                               </label>
+
+                              <button type="button" onClick={() => { setIsDrawingModalOpen(true); SoundEffects.playClick(); }}
+                                className="text-[9px] sm:text-[10px] uppercase tracking-wider text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 font-bold flex items-center gap-1.5 cursor-pointer transition-colors border-none bg-transparent">
+                                <Brush className="w-3 h-3 text-indigo-500" />
+                                {drawingDataUrl ? 'Sketch Attached' : 'Sketch'}
+                              </button>
                             </div>
                             <div className="flex items-center gap-2">
                               <span className={`text-[10px] font-bold font-mono ${content.length > 1900 ? 'text-amber-500' : 'text-zinc-400'}`}>
@@ -1039,132 +1316,289 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {!vaultLink ? (
-                    <div className="space-y-4">
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                        Bundle multiple items — notes, links — into one encrypted package. Burns after opening or expires automatically.
-                      </p>
+                  {/* Vault Tab Selector */}
+                  <div className="flex bg-zinc-100/60 dark:bg-zinc-800/60 p-1 rounded-2xl border border-zinc-200/40 dark:border-zinc-700/40 w-full select-none">
+                    <button
+                      type="button"
+                      onClick={() => { setVaultTabMode('create'); SoundEffects.playClick(); }}
+                      className={`flex-1 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer text-center ${
+                        vaultTabMode === 'create'
+                          ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-sm'
+                          : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
+                      }`}
+                    >
+                      Cloud Vault
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setVaultTabMode('offline'); SoundEffects.playClick(); }}
+                      className={`flex-1 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer text-center ${
+                        vaultTabMode === 'offline'
+                          ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-sm'
+                          : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
+                      }`}
+                    >
+                      Local Offline Vault (.anonym)
+                    </button>
+                  </div>
 
-                      {/* Items list */}
-                      {vaultItems.length > 0 && (
-                        <div className="space-y-2">
-                          {vaultItems.map(item => (
-                            <div key={item.id} className="flex items-start gap-2 bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200/60 dark:border-zinc-800/60 p-3 rounded-xl">
-                              <div className={`mt-0.5 shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold ${item.type === 'note' ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-600' : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600'}`}>
-                                {item.type === 'note' ? 'N' : 'L'}
+                  {vaultTabMode === 'create' ? (
+                    !vaultLink ? (
+                      <div className="space-y-4">
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                          Bundle multiple items — notes, links — into one encrypted package. Burns after opening or expires automatically.
+                        </p>
+
+                        {/* Items list */}
+                        {vaultItems.length > 0 && (
+                          <div className="space-y-2">
+                            {vaultItems.map(item => (
+                              <div key={item.id} className="flex items-start gap-2 bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200/60 dark:border-zinc-800/60 p-3 rounded-xl">
+                                <div className={`mt-0.5 shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold ${item.type === 'note' ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-600' : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600'}`}>
+                                  {item.type === 'note' ? 'N' : 'L'}
+                                </div>
+                                <span className="text-xs text-zinc-700 dark:text-zinc-300 flex-1 break-all">{item.content}</span>
+                                <button onClick={() => setVaultItems(prev => prev.filter(i => i.id !== item.id))} className="text-zinc-400 hover:text-rose-500 transition-colors cursor-pointer shrink-0">
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
                               </div>
-                              <span className="text-xs text-zinc-700 dark:text-zinc-300 flex-1 break-all">{item.content}</span>
-                              <button onClick={() => setVaultItems(prev => prev.filter(i => i.id !== item.id))} className="text-zinc-400 hover:text-rose-500 transition-colors cursor-pointer shrink-0">
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                            ))}
+                          </div>
+                        )}
 
-                      {/* Add item */}
-                      <div className="space-y-2">
-                        <div className="flex bg-zinc-100 dark:bg-zinc-800 p-0.5 rounded-full w-fit">
-                          {(['note', 'link'] as const).map(type => (
-                            <button key={type} type="button" onClick={() => setVaultItemType(type)}
-                              className={`px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer ${vaultItemType === type ? 'bg-white dark:bg-zinc-700 shadow-sm text-zinc-900 dark:text-zinc-100' : 'text-zinc-400'}`}>
-                              {type}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="flex gap-2">
-                          <input type={vaultItemType === 'link' ? 'url' : 'text'} value={vaultItemInput}
-                            onChange={(e) => setVaultItemInput(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addVaultItem(); } }}
-                            placeholder={vaultItemType === 'note' ? 'Enter a secret note...' : 'https://...'}
-                            className="flex-1 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl text-sm outline-none focus:ring-1 focus:ring-violet-400 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400" />
-                          <button type="button" onClick={addVaultItem}
-                            className="w-10 h-10 bg-violet-600 hover:bg-violet-700 text-white rounded-xl flex items-center justify-center transition-colors cursor-pointer shadow-sm shrink-0">
-                            <Plus className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Vault settings */}
-                      <div className="bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200/60 dark:border-zinc-800/60 p-3 sm:p-4 rounded-xl space-y-3">
-                        {/* Expiry */}
-                        <div className="flex items-center justify-between">
-                          <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">Expires In</label>
-                          <div className="flex bg-zinc-200/60 dark:bg-zinc-800/60 p-0.5 rounded-full">
-                            {([300, 3600, 86400] as const).map(d => (
-                              <button key={d} type="button" onClick={() => setVaultExpiry(d)}
-                                className={`px-2.5 py-1 rounded-full text-[9px] font-bold transition-all cursor-pointer ${vaultExpiry === d ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}`}>
-                                {d === 300 ? '5m' : d === 3600 ? '1h' : '24h'}
+                        {/* Add item */}
+                        <div className="space-y-2">
+                          <div className="flex bg-zinc-100 dark:bg-zinc-800 p-0.5 rounded-full w-fit">
+                            {(['note', 'link'] as const).map(type => (
+                              <button key={type} type="button" onClick={() => setVaultItemType(type)}
+                                className={`px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer ${vaultItemType === type ? 'bg-white dark:bg-zinc-700 shadow-sm text-zinc-900 dark:text-zinc-100' : 'text-zinc-400'}`}>
+                                {type}
                               </button>
                             ))}
                           </div>
-                        </div>
-                        {/* One time */}
-                        <div className="flex items-center justify-between border-t border-zinc-200/50 dark:border-zinc-800/50 pt-3">
-                          <div>
-                            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 block mb-0.5">Burn After Read</label>
-                            <span className="text-[9px] text-zinc-400">Destroy vault on first open.</span>
-                          </div>
-                          <button type="button" onClick={() => setVaultOneTime(!vaultOneTime)}
-                            className={`w-11 h-6 rounded-full p-0.5 transition-colors cursor-pointer ${vaultOneTime ? 'bg-violet-500' : 'bg-zinc-200 dark:bg-zinc-800'}`}>
-                            <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${vaultOneTime ? 'translate-x-5' : 'translate-x-0'}`} />
-                          </button>
-                        </div>
-                        {/* Password */}
-                        <div className="border-t border-zinc-200/50 dark:border-zinc-800/50 pt-3 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 block mb-0.5">Password Protection</label>
-                              <span className="text-[9px] text-zinc-400">Extra layer of encryption.</span>
-                            </div>
-                            <button type="button" onClick={() => setVaultUsePassword(!vaultUsePassword)}
-                              className={`w-11 h-6 rounded-full p-0.5 transition-colors cursor-pointer ${vaultUsePassword ? 'bg-violet-500' : 'bg-zinc-200 dark:bg-zinc-800'}`}>
-                              <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${vaultUsePassword ? 'translate-x-5' : 'translate-x-0'}`} />
+                          <div className="flex gap-2">
+                            <input type={vaultItemType === 'link' ? 'url' : 'text'} value={vaultItemInput}
+                              onChange={(e) => setVaultItemInput(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addVaultItem(); } }}
+                              placeholder={vaultItemType === 'note' ? 'Enter a secret note...' : 'https://...'}
+                              className="flex-1 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl text-sm outline-none focus:ring-1 focus:ring-violet-400 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400" />
+                            <button type="button" onClick={addVaultItem}
+                              className="w-10 h-10 bg-violet-600 hover:bg-violet-700 text-white rounded-xl flex items-center justify-center transition-colors cursor-pointer shadow-sm shrink-0">
+                              <Plus className="w-4 h-4" />
                             </button>
                           </div>
-                          <AnimatePresence>
-                            {vaultUsePassword && (
-                              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                                <input type="password" value={vaultPassword} onChange={(e) => setVaultPassword(e.target.value)}
-                                  placeholder="Vault password"
-                                  className="w-full bg-zinc-100/60 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl text-sm outline-none focus:ring-1 focus:ring-violet-400 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400" />
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
+                        </div>
+
+                        {/* Vault settings */}
+                        <div className="bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200/60 dark:border-zinc-800/60 p-3 sm:p-4 rounded-xl space-y-3">
+                          {/* Expiry */}
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">Expires In</label>
+                            <div className="flex bg-zinc-200/60 dark:bg-zinc-800/60 p-0.5 rounded-full">
+                              {([300, 3600, 86400] as const).map(d => (
+                                <button key={d} type="button" onClick={() => setVaultExpiry(d)}
+                                  className={`px-2.5 py-1 rounded-full text-[9px] font-bold transition-all cursor-pointer ${vaultExpiry === d ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}`}>
+                                  {d === 300 ? '5m' : d === 3600 ? '1h' : '24h'}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          {/* One time */}
+                          <div className="flex items-center justify-between border-t border-zinc-200/50 dark:border-zinc-800/50 pt-3">
+                            <div>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 block mb-0.5">Burn After Read</label>
+                              <span className="text-[9px] text-zinc-400">Destroy vault on first open.</span>
+                            </div>
+                            <button type="button" onClick={() => setVaultOneTime(!vaultOneTime)}
+                              className={`w-11 h-6 rounded-full p-0.5 transition-colors cursor-pointer ${vaultOneTime ? 'bg-violet-500' : 'bg-zinc-200 dark:bg-zinc-800'}`}>
+                              <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${vaultOneTime ? 'translate-x-5' : 'translate-x-0'}`} />
+                            </button>
+                          </div>
+                          {/* Password */}
+                          <div className="border-t border-zinc-200/50 dark:border-zinc-800/50 pt-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 block mb-0.5">Password Protection</label>
+                                <span className="text-[9px] text-zinc-400">Extra layer of encryption.</span>
+                              </div>
+                              <button type="button" onClick={() => setVaultUsePassword(!vaultUsePassword)}
+                                className={`w-11 h-6 rounded-full p-0.5 transition-colors cursor-pointer ${vaultUsePassword ? 'bg-violet-500' : 'bg-zinc-200 dark:bg-zinc-800'}`}>
+                                <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${vaultUsePassword ? 'translate-x-5' : 'translate-x-0'}`} />
+                              </button>
+                            </div>
+                            <AnimatePresence>
+                              {vaultUsePassword && (
+                                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                                  <input type="password" value={vaultPassword} onChange={(e) => setVaultPassword(e.target.value)}
+                                    placeholder="Vault password"
+                                    className="w-full bg-zinc-100/60 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl text-sm outline-none focus:ring-1 focus:ring-violet-400 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400" />
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        </div>
+
+                        <button onClick={handleCreateVault} disabled={isCreatingVault || vaultItems.length === 0}
+                          className="w-full bg-violet-600 hover:bg-violet-700 text-white font-semibold py-3 sm:py-3.5 px-6 rounded-full transition-all flex items-center justify-center gap-2.5 shadow-lg shadow-violet-600/20 active:scale-[0.98] disabled:opacity-50 cursor-pointer text-xs sm:text-sm btn-premium">
+                          {isCreatingVault
+                            ? <div className="w-4 h-4 border-2 border-violet-300 border-t-white rounded-full animate-spin" />
+                            : <><Vault className="w-4 h-4" /><span>Seal Vault ({vaultItems.length} item{vaultItems.length !== 1 ? 's' : ''})</span></>}
+                        </button>
+                      </div>
+                    ) : (
+                      /* Vault result */
+                      <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring', bounce: 0.2 }} className="space-y-5 py-2">
+                        <div className="mx-auto w-12 h-12 bg-violet-50 dark:bg-violet-950/30 text-violet-600 dark:text-violet-400 rounded-full flex items-center justify-center border border-violet-100 dark:border-violet-900/50">
+                          <Vault className="w-6 h-6" />
+                        </div>
+                        <div className="text-center space-y-2">
+                          <h2 className="text-2xl font-bold tracking-tight">Vault Sealed</h2>
+                          <p className="text-zinc-500 text-xs sm:text-sm leading-relaxed max-w-sm mx-auto">Share this link securely. The vault will {vaultOneTime ? 'burn after first open' : `expire after ${vaultExpiry === 300 ? '5 minutes' : vaultExpiry === 3600 ? '1 hour' : '24 hours'}`}.</p>
+                        </div>
+                        <div className="bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 p-1.5 pl-4 rounded-full flex gap-3 items-center shadow-inner overflow-hidden">
+                          <input type="text" value={vaultLink} readOnly className="bg-transparent text-xs sm:text-sm w-full text-zinc-800 dark:text-zinc-200 focus:outline-none font-mono truncate" onFocus={(e) => e.target.select()} />
+                          <button onClick={handleCopyVaultLink}
+                            className="bg-violet-600 hover:bg-violet-700 text-white font-medium px-4 sm:px-5 py-2 sm:py-2.5 rounded-full transition-all flex items-center gap-1.5 shrink-0 active:scale-95 cursor-pointer text-xs btn-premium">
+                            {vaultCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                            {vaultCopied ? 'Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <div className="flex justify-center">
+                          <button onClick={resetVault} className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-medium px-6 py-2 transition-colors text-xs border-b border-transparent hover:border-zinc-300 dark:hover:border-zinc-700 cursor-pointer">
+                            Create Another Vault
+                          </button>
+                        </div>
+                      </motion.div>
+                    )
+                  ) : (
+                    /* Offline Vault Tab content */
+                    <div className="space-y-5">
+                      {/* Description */}
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed text-center sm:text-left select-none">
+                        Encrypt text or files completely in browser memory and download a zero-knowledge <strong>.anonym</strong> archive. No servers, 100% offline and secure.
+                      </p>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* LEFT: Encrypt Panel */}
+                        <div className="bg-zinc-50/50 dark:bg-zinc-900/30 border border-zinc-200/50 dark:border-zinc-800/50 p-4 rounded-2xl space-y-3">
+                          <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 block select-none">Create Archive</label>
+                          
+                          <div className="space-y-2">
+                            <textarea
+                              value={offlineText}
+                              onChange={(e) => { setOfflineText(e.target.value); setOfflineFile(null); }}
+                              placeholder="Type private text note to archive..."
+                              className="w-full bg-zinc-100/60 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl text-xs outline-none focus:ring-1 focus:ring-violet-400 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 h-24 resize-none"
+                              disabled={!!offlineFile}
+                            />
+                            
+                            <div className="flex items-center justify-between text-[10px] text-zinc-400 select-none">
+                              <span>Or upload raw file (Max 5MB):</span>
+                            </div>
+                            
+                            <input
+                              type="file"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  if (file.size > 5 * 1024 * 1024) triggerAlert('File Too Large', 'Max file size is 5MB.');
+                                  else { setOfflineFile(file); setOfflineText(''); }
+                                }
+                              }}
+                              className="w-full text-xs text-zinc-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-[10px] file:font-bold file:uppercase file:bg-zinc-200 dark:file:bg-zinc-800 file:text-zinc-700 dark:file:text-zinc-300 hover:file:bg-zinc-350 dark:hover:file:bg-zinc-700 cursor-pointer"
+                            />
+                          </div>
+
+                          <input
+                            type="password"
+                            value={offlinePassphrase}
+                            onChange={(e) => setOfflinePassphrase(e.target.value)}
+                            placeholder="Enter encryption passphrase"
+                            className="w-full bg-zinc-100/60 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl text-xs outline-none focus:ring-1 focus:ring-violet-400 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                          />
+
+                          <button
+                            type="button"
+                            onClick={handleOfflineEncrypt}
+                            className="w-full bg-violet-600 hover:bg-violet-700 text-white font-bold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-xs cursor-pointer shadow-sm"
+                          >
+                            <Download className="w-3.5 h-3.5" /> Seal & Download File
+                          </button>
+                        </div>
+
+                        {/* RIGHT: Decrypt Panel */}
+                        <div className="bg-zinc-50/50 dark:bg-zinc-900/30 border border-zinc-200/50 dark:border-zinc-800/50 p-4 rounded-2xl space-y-3">
+                          <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 block select-none">Open Archive</label>
+                          
+                          <div className="space-y-2">
+                            <span className="text-[10px] text-zinc-400 block select-none">Select .anonym file:</span>
+                            <input
+                              type="file"
+                              accept=".anonym"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) setOfflineFileToDecrypt(file);
+                              }}
+                              className="w-full text-xs text-zinc-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-[10px] file:font-bold file:uppercase file:bg-zinc-200 dark:file:bg-zinc-800 file:text-zinc-700 dark:file:text-zinc-300 hover:file:bg-zinc-350 dark:hover:file:bg-zinc-700 cursor-pointer"
+                            />
+                          </div>
+
+                          <input
+                            type="password"
+                            value={offlineDecryptPassphrase}
+                            onChange={(e) => setOfflineDecryptPassphrase(e.target.value)}
+                            placeholder="Enter decryption passphrase"
+                            className="w-full bg-zinc-100/60 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl text-xs outline-none focus:ring-1 focus:ring-violet-400 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                          />
+
+                          <button
+                            type="button"
+                            onClick={handleOfflineDecrypt}
+                            className="w-full bg-zinc-900 dark:bg-zinc-100 hover:bg-black dark:hover:bg-white text-white dark:text-zinc-900 font-bold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-xs cursor-pointer shadow-sm"
+                          >
+                            <Upload className="w-3.5 h-3.5" /> Decrypt & Unseal Archive
+                          </button>
                         </div>
                       </div>
 
-                      <button onClick={handleCreateVault} disabled={isCreatingVault || vaultItems.length === 0}
-                        className="w-full bg-violet-600 hover:bg-violet-700 text-white font-semibold py-3 sm:py-3.5 px-6 rounded-full transition-all flex items-center justify-center gap-2.5 shadow-lg shadow-violet-600/20 active:scale-[0.98] disabled:opacity-50 cursor-pointer text-xs sm:text-sm btn-premium">
-                        {isCreatingVault
-                          ? <div className="w-4 h-4 border-2 border-violet-300 border-t-white rounded-full animate-spin" />
-                          : <><Vault className="w-4 h-4" /><span>Seal Vault ({vaultItems.length} item{vaultItems.length !== 1 ? 's' : ''})</span></>}
-                      </button>
+                      {/* Display Decrypted local data if exists */}
+                      <AnimatePresence>
+                        {decryptedOfflineData && (
+                          <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+                            className="bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl space-y-4">
+                            <div className="flex justify-between items-center border-b border-zinc-200/50 dark:border-zinc-800 pb-2">
+                              <div className="flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-violet-500" />
+                                <span className="font-bold text-xs text-zinc-900 dark:text-zinc-150 truncate max-w-[200px]">{decryptedOfflineData.fileName}</span>
+                              </div>
+                              <button type="button" onClick={() => setDecryptedOfflineData(null)} className="text-zinc-400 hover:text-zinc-650 dark:hover:text-zinc-200 p-1 cursor-pointer">
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                            
+                            {decryptedOfflineData.fileName.endsWith('.txt') ? (
+                              <div className="bg-white dark:bg-zinc-950 p-4 rounded-xl border border-zinc-200/50 dark:border-zinc-850 max-h-40 overflow-y-auto text-xs text-zinc-700 dark:text-zinc-300 font-mono whitespace-pre-wrap select-text text-left">
+                                {decryptedOfflineData.content}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-zinc-500 dark:text-zinc-400 italic text-center py-2 select-none">
+                                Secure binary file decoded in browser memory. Ready to download.
+                              </div>
+                            )}
+
+                            <div className="flex justify-center">
+                              <button
+                                type="button"
+                                onClick={downloadDecryptedLocalFile}
+                                className="bg-violet-600 hover:bg-violet-700 text-white font-bold py-2 px-5 rounded-full transition-all flex items-center justify-center gap-1.5 text-[10px] uppercase tracking-wider cursor-pointer shadow"
+                              >
+                                <Download className="w-3.5 h-3.5" /> Save Decrypted File
+                              </button>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
-                  ) : (
-                    /* Vault result */
-                    <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring', bounce: 0.2 }} className="space-y-5 py-2">
-                      <div className="mx-auto w-12 h-12 bg-violet-50 dark:bg-violet-950/30 text-violet-600 dark:text-violet-400 rounded-full flex items-center justify-center border border-violet-100 dark:border-violet-900/50">
-                        <Vault className="w-6 h-6" />
-                      </div>
-                      <div className="text-center space-y-2">
-                        <h2 className="text-2xl font-bold tracking-tight">Vault Sealed</h2>
-                        <p className="text-zinc-500 text-xs sm:text-sm leading-relaxed max-w-sm mx-auto">Share this link securely. The vault will {vaultOneTime ? 'burn after first open' : `expire after ${vaultExpiry === 300 ? '5 minutes' : vaultExpiry === 3600 ? '1 hour' : '24 hours'}`}.</p>
-                      </div>
-                      <div className="bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 p-1.5 pl-4 rounded-full flex gap-3 items-center shadow-inner overflow-hidden">
-                        <input type="text" value={vaultLink} readOnly className="bg-transparent text-xs sm:text-sm w-full text-zinc-800 dark:text-zinc-200 focus:outline-none font-mono truncate" onFocus={(e) => e.target.select()} />
-                        <button onClick={handleCopyVaultLink}
-                          className="bg-violet-600 hover:bg-violet-700 text-white font-medium px-4 sm:px-5 py-2 sm:py-2.5 rounded-full transition-all flex items-center gap-1.5 shrink-0 active:scale-95 cursor-pointer text-xs btn-premium">
-                          {vaultCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                          {vaultCopied ? 'Copied' : 'Copy'}
-                        </button>
-                      </div>
-                      <div className="flex justify-center">
-                        <button onClick={resetVault} className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-medium px-6 py-2 transition-colors text-xs border-b border-transparent hover:border-zinc-300 dark:hover:border-zinc-700 cursor-pointer">
-                          Create Another Vault
-                        </button>
-                      </div>
-                    </motion.div>
                   )}
                 </motion.div>
               )}
@@ -1308,6 +1742,98 @@ export default function Home() {
           <span className="font-mono tracking-normal normal-case">© {new Date().getFullYear()} Anonym · Made by SUBH ROY</span>
         </div>
       </footer>
+
+      {/* ── Drawing Sketchpad Modal ──────────────── */}
+      <AnimatePresence>
+        {isDrawingModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-zinc-950/40 dark:bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="bg-white dark:bg-zinc-900 rounded-[24px] border border-zinc-200/60 dark:border-zinc-800 p-5 sm:p-6 max-w-lg w-full shadow-2xl flex flex-col gap-4"
+            >
+              <div className="flex justify-between items-center border-b border-zinc-100 dark:border-zinc-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Brush className="w-4 h-4 text-indigo-500" />
+                  <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100">Draw Secure Sketch</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsDrawingModalOpen(false)}
+                  className="text-zinc-400 hover:text-zinc-950 dark:hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-4.5 h-4.5" />
+                </button>
+              </div>
+
+              {/* Canvas viewport */}
+              <div className="relative aspect-video w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white overflow-hidden shadow-inner cursor-crosshair">
+                <canvas
+                  ref={canvasRef}
+                  onMouseDown={startDrawing}
+                  onMouseMove={draw}
+                  onMouseUp={stopDrawing}
+                  onMouseLeave={stopDrawing}
+                  onTouchStart={startDrawing}
+                  onTouchMove={draw}
+                  onTouchEnd={stopDrawing}
+                  className="absolute inset-0 w-full h-full block"
+                />
+              </div>
+
+              {/* Toolbar */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                {/* Colors */}
+                <div className="flex items-center gap-1.5">
+                  <Palette className="w-3.5 h-3.5 text-zinc-400" />
+                  {[
+                    { id: 'indigo', color: '#6366f1' },
+                    { id: 'fuchsia', color: '#d946ef' },
+                    { id: 'rose', color: '#f43f5e' },
+                    { id: 'emerald', color: '#10b981' },
+                    { id: 'amber', color: '#f59e0b' },
+                    { id: 'black', color: '#18181b' },
+                  ].map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setBrushColor(c.color)}
+                      style={{ backgroundColor: c.color }}
+                      className={`w-5 h-5 rounded-full border transition-all cursor-pointer ${
+                        brushColor === c.color ? 'border-zinc-900 dark:border-white scale-110' : 'border-transparent opacity-85 hover:opacity-100'
+                      }`}
+                    />
+                  ))}
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={clearCanvas}
+                    className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-250 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 transition-all border border-zinc-200/50 dark:border-zinc-800/50 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" /> Clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveCanvas}
+                    className="flex items-center gap-1 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-indigo-600 hover:bg-indigo-700 text-white transition-all cursor-pointer shadow-sm"
+                  >
+                    Save & Attach
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Modal ───────────────────────────────── */}
       <AnimatePresence>

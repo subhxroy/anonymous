@@ -7,10 +7,13 @@ import { ShieldAlert, Lock, Key, Flame, Timer, Shield, Paperclip, ExternalLink, 
 import { motion, AnimatePresence } from 'motion/react';
 import CryptoJS from 'crypto-js';
 import ThemeToggle from '../components/ThemeToggle';
+import { SoundEffects } from '../utils/sounds';
+import { renderMarkdown } from '../utils/markdown';
 
 export default function MessageView() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
+  const [theme] = useState<'amethyst' | 'emerald' | 'amber' | 'slate'>(() => (localStorage.getItem('anonym_theme') as any) || 'amethyst');
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorType, setErrorType] = useState<'destroyed' | 'revoked' | 'expired' | 'generic'>('generic');
@@ -307,6 +310,7 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
     if (timeLeft === null) return;
     if (timeLeft <= 0) {
       setIsBurning(true);
+      SoundEffects.playBurn();
       const burnTimeout = setTimeout(() => {
         setContent(null); 
         setErrorType('expired'); 
@@ -408,6 +412,7 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
   /* ── Reveal handler ─────────────────────────── */
   const handleReveal = () => {
     setIsRevealed(true);
+    SoundEffects.playDecrypt();
     if (attachmentMeta && (!isPasswordProtected || isPasswordVerified)) {
       const secretKey = location.hash.substring(1);
       loadAndDecryptAttachment(attachmentMeta, secretKey + password);
@@ -485,7 +490,7 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
   /* ── Main view ──────────────────────────────── */
   return (
     <div
-      className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col font-sans select-none overflow-hidden transition-colors duration-200 relative"
+      className={`min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col font-sans select-none overflow-hidden transition-colors duration-200 relative ${theme === 'amethyst' ? '' : 'theme-' + theme}`}
       onContextMenu={(e) => e.preventDefault()}
       style={{ WebkitUserSelect: 'none', userSelect: 'none' }}
     >
@@ -691,10 +696,10 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
                         onTouchStart={handleHoldStart}
                         onTouchEnd={handleHoldEnd}
                       >
-                        <div className={`hold-to-view-content ${isHolding ? 'revealed' : ''} cursor-pointer select-none w-full text-center`}>
-                          <p className="text-2xl sm:text-3xl lg:text-4xl leading-relaxed tracking-tight text-zinc-900 dark:text-zinc-100 font-normal whitespace-pre-wrap text-center mix-blend-multiply dark:mix-blend-screen pb-6">
-                            {content}
-                          </p>
+                        <div className={`hold-to-view-content ${isHolding ? 'revealed' : ''} cursor-pointer select-none w-full text-center max-w-2xl`}>
+                          <div className="pb-6">
+                            {renderMarkdown(content)}
+                          </div>
                         </div>
                         {!isHolding && (
                           <div className="mt-4 text-[10px] text-zinc-400 uppercase tracking-widest font-bold flex items-center gap-1.5">
@@ -703,9 +708,9 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
                         )}
                       </div>
                     ) : (
-                      <p className="text-2xl sm:text-3xl lg:text-4xl leading-relaxed tracking-tight text-zinc-900 dark:text-zinc-100 font-normal whitespace-pre-wrap text-center mix-blend-multiply dark:mix-blend-screen pb-6 select-none">
-                        {content}
-                      </p>
+                      <div className="w-full text-center pb-6 select-none max-w-2xl">
+                        {renderMarkdown(content)}
+                      </div>
                     )
                   )}
 

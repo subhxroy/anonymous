@@ -218,3 +218,162 @@ html {
   filter: blur(0);
   transform: scale(1);
 }
+
+/* ── Dynamic Themes ─────────────────────────── */
+
+/* 1. Emerald / Terminal Theme */
+.theme-emerald {
+  --theme-primary-color: #10b981 !important;
+}
+.theme-emerald .bg-indigo-500,
+.theme-emerald .bg-indigo-600,
+.theme-emerald .bg-violet-600 {
+  background-color: #10b981 !important;
+}
+.theme-emerald .hover\:bg-indigo-600:hover,
+.theme-emerald .hover\:bg-indigo-700:hover,
+.theme-emerald .hover\:bg-zinc-800:hover,
+.theme-emerald .dark\:.hover\:bg-zinc-800:hover,
+.theme-emerald .hover\:bg-black:hover,
+.theme-emerald .hover\:bg-zinc-900:hover {
+  background-color: #059669 !important;
+}
+.theme-emerald .text-indigo-500,
+.theme-emerald .text-indigo-600,
+.theme-emerald .text-indigo-400,
+.theme-emerald .text-violet-600,
+.theme-emerald .text-violet-400 {
+  color: #10b981 !important;
+}
+.theme-emerald .border-indigo-100,
+.theme-emerald .border-indigo-200,
+.theme-emerald .border-indigo-500,
+.theme-emerald .border-indigo-900\/30,
+.theme-emerald .border-violet-100,
+.theme-emerald .border-violet-900\/30 {
+  border-color: rgba(16, 185, 129, 0.25) !important;
+}
+.theme-emerald .bg-indigo-50,
+.theme-emerald .bg-indigo-50\/50,
+.theme-emerald .bg-violet-50,
+.theme-emerald .bg-violet-955\/30,
+.theme-emerald .dark\:bg-violet-950\/30 {
+  background-color: rgba(16, 185, 129, 0.07) !important;
+}
+.theme-emerald .focus\:ring-2:focus,
+.theme-emerald .focus\:ring-indigo-400:focus,
+.theme-emerald .focus\:ring-violet-400:focus {
+  --tw-ring-color: rgba(16, 185, 129, 0.4) !important;
+}
+.theme-emerald .from-indigo-500 {
+  --tw-gradient-from: #10b981 !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(16, 185, 129, 0)) !important;
+}
+.theme-emerald .to-violet-600 {
+  --tw-gradient-to: #14b8a6 !important; /* Teal-500 */
+}
+
+/* 2. Amber / Cyberpunk Theme */
+.theme-amber {
+  --theme-primary-color: #f59e0b !important;
+}
+.theme-amber .bg-indigo-500,
+.theme-amber .bg-indigo-600,
+.theme-amber .bg-violet-600 {
+  background-color: #f59e0b !important;
+}
+.theme-amber .hover\:bg-indigo-600:hover,
+.theme-amber .hover\:bg-indigo-700:hover,
+.theme-amber .hover\:bg-zinc-800:hover,
+.theme-amber .dark\:.hover\:bg-zinc-800:hover,
+.theme-amber .hover\:bg-black:hover,
+.theme-amber .hover\:bg-zinc-900:hover {
+  background-color: #d97706 !important;
+}
+.theme-amber .text-indigo-500,
+.theme-amber .text-indigo-600,
+.theme-amber .text-indigo-400,
+.theme-amber .text-violet-600,
+.theme-amber .text-violet-400 {
+  color: #f59e0b !important;
+}
+.theme-amber .border-indigo-100,
+.theme-amber .border-indigo-200,
+.theme-amber .border-indigo-500,
+.theme-amber .border-indigo-900\/30,
+.theme-amber .border-violet-100,
+.theme-amber .border-violet-900\/30 {
+  border-color: rgba(245, 158, 11, 0.25) !important;
+}
+.theme-amber .bg-indigo-50,
+.theme-amber .bg-indigo-50\/50,
+.theme-amber .bg-violet-50,
+.theme-amber .bg-violet-955\/30,
+.theme-amber .dark\:bg-violet-950\/30 {
+  background-color: rgba(245, 158, 11, 0.07) !important;
+}
+.theme-amber .focus\:ring-2:focus,
+.theme-amber .focus\:ring-indigo-400:focus,
+.theme-amber .focus\:ring-violet-400:focus {
+  --tw-ring-color: rgba(245, 158, 11, 0.4) !important;
+}
+.theme-amber .from-indigo-500 {
+  --tw-gradient-from: #f59e0b !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(245, 158, 11, 0)) !important;
+}
+.theme-amber .to-violet-600 {
+  --tw-gradient-to: #ea580c !important; /* Orange-600 */
+}
+
+/* 3. Slate / Stealth Monochrome Theme */
+.theme-slate {
+  --theme-primary-color: #71717a !important;
+}
+.theme-slate .bg-indigo-500,
+.theme-slate .bg-indigo-600,
+.theme-slate .bg-violet-600 {
+  background-color: #71717a !important;
+}
+.theme-slate .hover\:bg-indigo-600:hover,
+.theme-slate .hover\:bg-indigo-700:hover,
+.theme-slate .hover\:bg-zinc-800:hover,
+.theme-slate .dark\:.hover\:bg-zinc-800:hover,
+.theme-slate .hover\:bg-black:hover,
+.theme-slate .hover\:bg-zinc-900:hover {
+  background-color: #52525b !important;
+}
+.theme-slate .text-indigo-500,
+.theme-slate .text-indigo-600,
+.theme-slate .text-indigo-400,
+.theme-slate .text-violet-600,
+.theme-slate .text-violet-400 {
+  color: #71717a !important;
+}
+.theme-slate .border-indigo-100,
+.theme-slate .border-indigo-200,
+.theme-slate .border-indigo-500,
+.theme-slate .border-indigo-900\/30,
+.theme-slate .border-violet-100,
+.theme-slate .border-violet-900\/30 {
+  border-color: rgba(113, 113, 122, 0.25) !important;
+}
+.theme-slate .bg-indigo-50,
+.theme-slate .bg-indigo-50\/50,
+.theme-slate .bg-violet-50,
+.theme-slate .bg-violet-955\/30,
+.theme-slate .dark\:bg-violet-950\/30 {
+  background-color: rgba(113, 113, 122, 0.07) !important;
+}
+.theme-slate .focus\:ring-2:focus,
+.theme-slate .focus\:ring-indigo-400:focus,
+.theme-slate .focus\:ring-violet-400:focus {
+  --tw-ring-color: rgba(113, 113, 122, 0.4) !important;
+}
+.theme-slate .from-indigo-500 {
+  --tw-gradient-from: #71717a !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(113, 113, 122, 0)) !important;
+}
+.theme-slate .to-violet-600 {
+  --tw-gradient-to: #3f3f46 !important; /* Zinc-600 */
+}
+

@@ -6,6 +6,7 @@ import { ShieldAlert, Lock, Key, Flame, Timer, Shield, ExternalLink, ChevronDown
 import { motion, AnimatePresence } from 'motion/react';
 import CryptoJS from 'crypto-js';
 import ThemeToggle from '../components/ThemeToggle';
+import { renderMarkdown } from '../utils/markdown';
 
 interface VaultItem {
   id: string;
@@ -17,6 +18,7 @@ export default function VaultView() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const navigate = useNavigate();
+  const [theme] = useState<'amethyst' | 'emerald' | 'amber' | 'slate'>(() => (localStorage.getItem('anonym_theme') as any) || 'amethyst');
 
   const [items, setItems] = useState<VaultItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -397,7 +399,7 @@ export default function VaultView() {
   const secTier = getSecurityTier();
 
   return (
-    <div className={`min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col font-sans selection:bg-indigo-100 dark:selection:bg-indigo-900/30 transition-colors duration-200 antialiased relative overflow-x-hidden ${isBlurred ? 'blur-2xl select-none pointer-events-none' : ''}`}>
+    <div className={`min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col font-sans selection:bg-indigo-100 dark:selection:bg-indigo-900/30 transition-colors duration-200 antialiased relative overflow-x-hidden ${isBlurred ? 'blur-2xl select-none pointer-events-none' : ''} ${theme === 'amethyst' ? '' : 'theme-' + theme}`}>
       {/* Background radial effects */}
       <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
         <div className="absolute top-[-20%] left-[-15%] w-[60%] h-[60%] rounded-full bg-radial from-indigo-500/8 dark:from-indigo-500/5 to-transparent blur-[100px]" />
@@ -584,9 +586,9 @@ export default function VaultView() {
                               )}
                             </button>
                           </div>
-                          <p className="text-sm text-zinc-800 dark:text-zinc-200 leading-relaxed font-mono whitespace-pre-wrap select-all pr-2">
-                            {item.content}
-                          </p>
+                          <div className="w-full text-left font-mono select-all pr-2">
+                            {renderMarkdown(item.content)}
+                          </div>
                         </div>
                       ) : (
                         <div className="flex items-center justify-between gap-3">

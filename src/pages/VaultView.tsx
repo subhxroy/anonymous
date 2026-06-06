@@ -668,7 +668,7 @@ export default function VaultView() {
           <span className="text-zinc-300 dark:text-zinc-800">•</span>
           <Link to="/terms" className="hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">Terms</Link>
           <span className="text-zinc-300 dark:text-zinc-800">•</span>
-          <span className="font-mono tracking-normal normal-case">© {new Date().getFullYear()} Anonym</span>
+          <span className="font-mono tracking-normal normal-case">© {new Date().getFullYear()} Anonym · Made by SUBH ROY</span>
         </div>
       </footer>
     </div>

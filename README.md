@@ -1,5 +1,7 @@
 # Anonym — Ephemeral Secure Messaging & Stealth Chat
 
+**Live Demo**: [https://end-to-end-v2.netlify.app/](https://end-to-end-v2.netlify.app/)
+
 Anonym is a premium, zero-knowledge web application designed for secure, volatile, and untraceable communication. It allows users to send one-time secure messages (whispers) with password protection and encrypted attachments, or create live stealth chat rooms that automatically implode after inactivity.
 
 ---

@@ -2,10 +2,18 @@ import React, { useEffect, useState } from 'react';
 import { Sun, Moon } from 'lucide-react';
 
 export default function ThemeToggle() {
+  const checkAutoTheme = () => {
+    const hour = new Date().getHours();
+    return hour >= 17 || hour < 5;
+  };
+
   const [isDark, setIsDark] = useState(() => {
-    // Only restore dark if user explicitly set it to dark previously
-    const saved = localStorage.getItem('anonym_theme');
-    return saved === 'dark';
+    const autoMode = localStorage.getItem('anonym_theme_auto');
+    if (autoMode === 'false') {
+      const saved = localStorage.getItem('anonym_theme');
+      return saved === 'dark';
+    }
+    return checkAutoTheme();
   });
 
   useEffect(() => {
@@ -13,26 +21,42 @@ export default function ThemeToggle() {
     if (isDark) {
       root.classList.add('dark');
       root.classList.remove('light');
-      localStorage.setItem('anonym_theme', 'dark');
     } else {
       root.classList.remove('dark');
       root.classList.add('light');
-      localStorage.setItem('anonym_theme', 'light');
     }
   }, [isDark]);
 
-  // On mount, ensure the correct class is applied immediately
   useEffect(() => {
-    const saved = localStorage.getItem('anonym_theme');
+    const interval = setInterval(() => {
+      const autoMode = localStorage.getItem('anonym_theme_auto');
+      if (autoMode !== 'false') {
+        const shouldBeDark = checkAutoTheme();
+        setIsDark(shouldBeDark);
+      }
+    }, 60000); // Check every minute
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Ensure correct class is applied on mount
+  useEffect(() => {
     const root = document.documentElement;
-    if (saved === 'dark') {
+    if (isDark) {
       root.classList.add('dark');
     } else {
       root.classList.remove('dark');
     }
-  }, []);
+  }, []); // Initial mount check handled by state initialization
 
-  const toggle = () => setIsDark(prev => !prev);
+  const toggle = () => {
+    setIsDark(prev => {
+      const next = !prev;
+      localStorage.setItem('anonym_theme', next ? 'dark' : 'light');
+      localStorage.setItem('anonym_theme_auto', 'false');
+      return next;
+    });
+  };
 
   return (
     <button

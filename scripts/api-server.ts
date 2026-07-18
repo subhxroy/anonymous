@@ -24,10 +24,10 @@ const firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
 // Initialize Firebase
 const appFirebase = initializeApp(firebaseConfig);
-const db = getFirestore(appFirebase, firebaseConfig.firestoreDatabaseId || 'meatdae2nd');
+const db = getFirestore(appFirebase, firebaseConfig.firestoreDatabaseId || 'encrypted');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '10kb' }));
 
 // Enable CORS
 app.use((req, res, next) => {
@@ -54,6 +54,14 @@ app.post('/api/encrypt', (req, res) => {
     res.status(400).json({ error: 'Missing message or key in request body.' });
     return;
   }
+  if (typeof message !== 'string' || message.length > 5000) {
+    res.status(400).json({ error: 'Invalid message. Must be a string up to 5000 characters.' });
+    return;
+  }
+  if (typeof key !== 'string' || key.length > 128) {
+    res.status(400).json({ error: 'Invalid key. Must be a string up to 128 characters.' });
+    return;
+  }
   try {
     const ciphertext = CryptoJS.AES.encrypt(message, key).toString();
     res.json({ ciphertext });
@@ -67,6 +75,14 @@ app.post('/api/decrypt', (req, res) => {
   const { ciphertext, key } = req.body;
   if (!ciphertext || !key) {
     res.status(400).json({ error: 'Missing ciphertext or key in request body.' });
+    return;
+  }
+  if (typeof ciphertext !== 'string' || ciphertext.length > 10000) {
+    res.status(400).json({ error: 'Invalid ciphertext. Must be a string up to 10000 characters.' });
+    return;
+  }
+  if (typeof key !== 'string' || key.length > 128) {
+    res.status(400).json({ error: 'Invalid key. Must be a string up to 128 characters.' });
     return;
   }
   try {
@@ -88,6 +104,32 @@ app.post('/api/messages/create', async (req, res) => {
 
   if (!message) {
     res.status(400).json({ error: 'Missing message field.' });
+    return;
+  }
+  if (typeof message !== 'string' || message.length > 5000) {
+    res.status(400).json({ error: 'Invalid message. Must be a string up to 5000 characters.' });
+    return;
+  }
+  if (password !== undefined && (typeof password !== 'string' || password.length > 128)) {
+    res.status(400).json({ error: 'Invalid password. Must be a string up to 128 characters.' });
+    return;
+  }
+  if (decoyPassword !== undefined && (typeof decoyPassword !== 'string' || decoyPassword.length > 128)) {
+    res.status(400).json({ error: 'Invalid decoyPassword. Must be a string up to 128 characters.' });
+    return;
+  }
+  if (decoyMessage !== undefined && (typeof decoyMessage !== 'string' || decoyMessage.length > 5000)) {
+    res.status(400).json({ error: 'Invalid decoyMessage. Must be a string up to 5000 characters.' });
+    return;
+  }
+  if (holdToReveal !== undefined && typeof holdToReveal !== 'boolean') {
+    res.status(400).json({ error: 'Invalid holdToReveal. Must be a boolean.' });
+    return;
+  }
+
+  const durationVal = typeof duration === 'number' ? duration : parseInt(duration, 10);
+  if (isNaN(durationVal) || durationVal < 10 || durationVal > 86400) {
+    res.status(400).json({ error: 'Invalid duration. Must be a number between 10 and 86400 seconds.' });
     return;
   }
 
@@ -115,7 +157,7 @@ app.post('/api/messages/create', async (req, res) => {
     const payload: any = {
       content: encryptedText,
       createdAt: serverTimestamp(),
-      duration: parseInt(duration, 10),
+      duration: durationVal,
       holdToReveal,
       isPasswordProtected,
       hasDecoy,
@@ -129,14 +171,14 @@ app.post('/api/messages/create', async (req, res) => {
     const docRef = doc(db, 'messages', id);
     await setDoc(docRef, payload);
 
-    const baseAppUrl = 'https://end-to-end-v2.netlify.app';
+    const baseAppUrl = process.env.ANONYM_BASE_URL || 'https://end-to-end-v2.netlify.app';
     const secureUrl = `${baseAppUrl}/m/${id}#${secretKey}`;
 
     res.json({
       id,
       secretKey,
       secureUrl,
-      duration,
+      duration: durationVal,
       isPasswordProtected,
       hasDecoy
     });

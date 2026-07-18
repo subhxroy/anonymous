@@ -25,7 +25,7 @@ const firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || 'meatdae2nd');
+const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || 'encrypted');
 
 // Helpers for reading user input safely
 function askQuestion(query: string, hideInput = false): Promise<string> {
@@ -182,7 +182,7 @@ async function handleCreate() {
     const docRef = doc(db, 'messages', id);
     await setDoc(docRef, payload);
 
-    const baseAppUrl = 'https://end-to-end-v2.netlify.app';
+    const baseAppUrl = process.env.ANONYM_BASE_URL || 'https://end-to-end-v2.netlify.app';
     const secureLink = `${baseAppUrl}/m/${id}#${secretKey}`;
 
     console.log('\n\x1b[32m✔ Secure Link Created Successfully!\x1b[0m');

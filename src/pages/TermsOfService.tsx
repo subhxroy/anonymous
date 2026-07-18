@@ -43,10 +43,10 @@ export default function TermsOfService() {
 
             <div className="border-b border-zinc-100 dark:border-zinc-800 pb-4">
               <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">Terms of Service</h2>
-              <p className="text-xs text-zinc-400 dark:text-zinc-555 mt-1 uppercase tracking-widest font-mono">Last Updated: June 6, 2026</p>
+              <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1 uppercase tracking-widest font-mono">Last Updated: June 6, 2026</p>
             </div>
 
-            <div className="space-y-4 text-sm text-zinc-650 dark:text-zinc-350 leading-relaxed max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+            <div className="space-y-4 text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
               <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-base mt-2">1. Acceptance of Terms</h3>
               <p>
                 By accessing and using Anonym, you agree to comply with and be bound by these Terms of Service. If you do not agree, you must immediately cease usage of our secure messaging platform.
@@ -76,7 +76,7 @@ export default function TermsOfService() {
         </motion.div>
       </main>
 
-      <footer className="px-4 sm:px-8 pb-4 sm:pb-6 w-full max-w-3xl mx-auto text-[9px] sm:text-[10px] text-zinc-400 dark:text-zinc-555 flex justify-center tracking-widest shrink-0 font-medium uppercase">
+      <footer className="px-4 sm:px-8 pb-4 sm:pb-6 w-full max-w-3xl mx-auto text-[9px] sm:text-[10px] text-zinc-400 dark:text-zinc-500 flex justify-center tracking-widest shrink-0 font-medium uppercase">
         &copy; {new Date().getFullYear()} Anonym Secure &bull; Zero Trace Communication
       </footer>
     </div>

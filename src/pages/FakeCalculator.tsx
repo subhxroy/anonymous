@@ -42,8 +42,10 @@ export default function FakeCalculator({ onDismiss }: FakeCalculatorProps) {
   const [acTimer, setAcTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
 
   const formatDisplay = (val: string) => {
+    if (val === 'Error') return 'Error';
     const num = parseFloat(val);
     if (isNaN(num)) return val;
+    if (!isFinite(num)) return 'Error';
     if (Math.abs(num) >= 1e9) return num.toExponential(3);
     // Up to 9 digits displayed
     const str = val.endsWith('.') ? val : String(parseFloat(val.slice(0, 16)));
@@ -73,7 +75,7 @@ export default function FakeCalculator({ onDismiss }: FakeCalculatorProps) {
 
     if (btn.type === 'number') {
       if (btn.value === '.' && display.includes('.')) return;
-      if (waitingForOperand) {
+      if (waitingForOperand || display === 'Error') {
         setDisplay(btn.value === '.' ? '0.' : btn.value);
         setWaitingForOperand(false);
       } else {
@@ -123,7 +125,7 @@ export default function FakeCalculator({ onDismiss }: FakeCalculatorProps) {
       case '+': return a + b;
       case '-': return a - b;
       case '*': return a * b;
-      case '/': return b !== 0 ? a / b : 0;
+      case '/': return a / b;
       default: return b;
     }
   };

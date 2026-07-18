@@ -5,7 +5,13 @@
 
 export class SoundEffects {
   private static ctx: AudioContext | null = null;
-  private static isMuted = localStorage.getItem('anonym_muted') === 'true';
+  private static isMuted = (() => {
+    try {
+      return localStorage.getItem('anonym_muted') === 'true';
+    } catch {
+      return false;
+    }
+  })();
 
   private static init() {
     if (!this.ctx) {
@@ -19,7 +25,9 @@ export class SoundEffects {
 
   public static toggleMute(): boolean {
     this.isMuted = !this.isMuted;
-    localStorage.setItem('anonym_muted', String(this.isMuted));
+    try {
+      localStorage.setItem('anonym_muted', String(this.isMuted));
+    } catch {}
     return this.isMuted;
   }
 

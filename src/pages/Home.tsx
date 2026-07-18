@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, storage } from '../firebase';
-import { collection, addDoc, serverTimestamp, doc, onSnapshot, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, onSnapshot, getDoc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import { Send, Copy, Check, Shield, ShieldAlert, ArrowRight, Lock, Eye, EyeOff, MessageSquare, KeyRound, Flame, Paperclip, X, Vault, Trash2, ChevronRight, Plus, Link2, MousePointerClick, Volume2, VolumeX, Palette, Brush, RotateCcw, Download, Upload, FileText } from 'lucide-react';
 import { ref, uploadString, getDownloadURL, deleteObject } from 'firebase/storage';
 import { motion, AnimatePresence } from 'motion/react';
@@ -91,8 +91,13 @@ export default function Home() {
   const [activePreset, setActivePreset] = useState<'custom' | 'casual' | 'private' | 'sensitive' | 'ultra'>('custom');
   const passwordInputRef = useRef<HTMLInputElement>(null);
 
-  // Dynamic Themes & Sounds
-  const [theme, setTheme] = useState<'amethyst' | 'emerald' | 'amber' | 'slate'>(() => (localStorage.getItem('anonym_theme') as any) || 'amethyst');
+  const [theme, setTheme] = useState<'amethyst' | 'emerald' | 'amber' | 'slate'>(() => {
+    try {
+      return (localStorage.getItem('anonym_color_theme') as any) || 'amethyst';
+    } catch {
+      return 'amethyst';
+    }
+  });
   const [isMuted, setIsMuted] = useState(() => SoundEffects.getMuted());
 
   // Drawing Canvas States
@@ -179,8 +184,12 @@ export default function Home() {
     id: string; link: string; createdAt: number;
     status: 'unread' | 'read' | 'revoked'; screenshotDetected?: boolean;
   }>>(() => {
-    const saved = localStorage.getItem('anonym_history');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('anonym_history');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
 
   // Modal
@@ -244,8 +253,16 @@ export default function Home() {
 
   // Apply theme class to document element
   useEffect(() => {
-    localStorage.setItem('anonym_theme', theme);
-    document.documentElement.className = theme === 'amethyst' ? '' : `theme-${theme}`;
+    try {
+      localStorage.setItem('anonym_color_theme', theme);
+    } catch {}
+    const root = document.documentElement;
+    Array.from(root.classList).forEach(cls => {
+      if (cls.startsWith('theme-')) root.classList.remove(cls);
+    });
+    if (theme !== 'amethyst') {
+      root.classList.add(`theme-${theme}`);
+    }
   }, [theme]);
 
   // Audio mute toggle handler
@@ -261,12 +278,16 @@ export default function Home() {
         const canvas = canvasRef.current;
         if (canvas) {
           const rect = canvas.getBoundingClientRect();
-          canvas.width = rect.width;
-          canvas.height = rect.height;
+          const dpr = window.devicePixelRatio || 1;
+          canvas.width = rect.width * dpr;
+          canvas.height = rect.height * dpr;
+          canvas.style.width = `${rect.width}px`;
+          canvas.style.height = `${rect.height}px`;
           const ctx = canvas.getContext('2d');
           if (ctx) {
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillRect(0, 0, rect.width, rect.height);
           }
         }
       }, 80);
@@ -317,8 +338,9 @@ export default function Home() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, rect.width, rect.height);
   };
 
   const saveCanvas = () => {
@@ -567,7 +589,7 @@ export default function Home() {
         };
         if (docId) {
           const docRefCustom = doc(db, 'messages', docId);
-          await import('firebase/firestore').then(({ setDoc }) => setDoc(docRefCustom, payload));
+          await setDoc(docRefCustom, payload);
           docRef = docRefCustom;
         } else {
           docRef = await addDoc(collection(db, 'messages'), payload);
@@ -579,7 +601,7 @@ export default function Home() {
       } else {
         if (docId) {
           const docRefCustom = doc(db, 'messages', docId);
-          await import('firebase/firestore').then(({ setDoc }) => setDoc(docRefCustom, basePayload));
+          await setDoc(docRefCustom, basePayload);
           docRef = docRefCustom;
         } else {
           docRef = await addDoc(collection(db, 'messages'), basePayload);
@@ -606,7 +628,9 @@ export default function Home() {
       try {
         await deleteDoc(doc(db, 'messages', id));
         const fileRef = ref(storage, `attachments/${id}`);
-        deleteObject(fileRef).catch(() => {});
+        deleteObject(fileRef).catch((err) => {
+          console.warn("Failed to clean up attachment from storage:", err);
+        });
         setHistory(prev => prev.map(h => h.id === id ? { ...h, status: 'revoked' } : h));
         showToast('Message revoked and destroyed.', 'warning');
       } catch (err) {
@@ -713,9 +737,8 @@ export default function Home() {
         type: item.type,
         content: CryptoJS.AES.encrypt(item.content, encKey).toString(),
       }));
-      const { setDoc, doc: firestoreDoc } = await import('firebase/firestore');
       const vaultId = CryptoJS.lib.WordArray.random(16).toString().slice(0, 20);
-      await setDoc(firestoreDoc(db, 'vaults', vaultId), {
+      await setDoc(doc(db, 'vaults', vaultId), {
         items: encryptedItems,
         createdAt: serverTimestamp(),
         status: 'open',
@@ -1571,7 +1594,7 @@ export default function Home() {
                                 <FileText className="w-4 h-4 text-violet-500" />
                                 <span className="font-bold text-xs text-zinc-900 dark:text-zinc-150 truncate max-w-[200px]">{decryptedOfflineData.fileName}</span>
                               </div>
-                              <button type="button" onClick={() => setDecryptedOfflineData(null)} className="text-zinc-400 hover:text-zinc-650 dark:hover:text-zinc-200 p-1 cursor-pointer">
+                              <button type="button" onClick={() => setDecryptedOfflineData(null)} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1 cursor-pointer">
                                 <X className="w-4 h-4" />
                               </button>
                             </div>

@@ -13,7 +13,13 @@ import { renderMarkdown } from '../utils/markdown';
 export default function MessageView() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
-  const [theme] = useState<'amethyst' | 'emerald' | 'amber' | 'slate'>(() => (localStorage.getItem('anonym_theme') as any) || 'amethyst');
+  const [theme] = useState<'amethyst' | 'emerald' | 'amber' | 'slate'>(() => {
+    try {
+      return (localStorage.getItem('anonym_color_theme') as any) || 'amethyst';
+    } catch {
+      return 'amethyst';
+    }
+  });
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorType, setErrorType] = useState<'destroyed' | 'revoked' | 'expired' | 'generic'>('generic');
@@ -38,6 +44,9 @@ export default function MessageView() {
   const [tempCachedData, setTempCachedData] = useState<any>(null);
   const [isDecoySession, setIsDecoySession] = useState(false);
   const [isBurning, setIsBurning] = useState(false);
+
+  const [graceTimeRemaining, setGraceTimeRemaining] = useState<number | null>(null);
+  const selfDestructTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Attachments
   const [attachmentMeta, setAttachmentMeta] = useState<any>(null);
@@ -131,6 +140,7 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
 
   /* ── Fetch & decrypt message ────────────────── */
   useEffect(() => {
+    let isMounted = true;
     const fetchMessage = async () => {
       if (!id) return;
       try {
@@ -138,6 +148,8 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
         const docSnap = await getDoc(docRef);
         let fetchedContent = null;
         let expiresAt = null;
+
+        if (!isMounted) return;
 
         if (docSnap.exists()) {
           const data = docSnap.data();
@@ -218,6 +230,8 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
           }
         }
 
+        if (!isMounted) return;
+
         if (fetchedContent && expiresAt) {
           const remaining = Math.floor((expiresAt - Date.now()) / 1000);
           if (remaining > 0) { setContent(fetchedContent); setTimeLeft(remaining); }
@@ -226,12 +240,19 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
           setErrorType('destroyed'); setError('This message has been read and permanently destroyed, or never existed.');
         }
       } catch (err) {
-        setErrorType('generic'); setError('Failed to securely retrieve the message.');
+        if (isMounted) {
+          setErrorType('generic'); setError('Failed to securely retrieve the message.');
+        }
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
     fetchMessage();
+    return () => {
+      isMounted = false;
+    };
   }, [id]);
 
   /* ── Password submit ────────────────────────── */
@@ -320,7 +341,9 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
         if (id) {
           sessionStorage.removeItem(`msg_${id}`);
           deleteDoc(doc(db, 'messages', id)).catch(console.error);
-          deleteObject(ref(storage, `attachments/${id}`)).catch(() => {});
+          deleteObject(ref(storage, `attachments/${id}`)).catch((err) => {
+            console.warn("Failed to clean up attachment from storage on expiration:", err);
+          });
         }
       }, 800);
       return () => clearTimeout(burnTimeout);
@@ -342,20 +365,69 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
     if (!id || !isSecurityReady) return;
     try {
       await updateDoc(doc(db, 'messages', id), { screenshotDetected: true, status: 'read', content: '' });
-    } catch {}
+    } catch (err) {
+      console.warn("Failed to report screenshot to server:", err);
+    }
     setContent(null);
     setErrorType('generic');
     setError('Security Violation: Message permanently incinerated due to screen capture or window focus loss.');
     setIsRevealed(false);
     if (id) {
       sessionStorage.removeItem(`msg_${id}`);
-      deleteObject(ref(storage, `attachments/${id}`)).catch(() => {});
+      deleteObject(ref(storage, `attachments/${id}`)).catch((err) => {
+        console.warn("Failed to clean up attachment from storage on security violation:", err);
+      });
     }
   };
 
+  const startGracePeriod = useCallback(() => {
+    if (!id || !isSecurityReady) return;
+    if (selfDestructTimerRef.current) return;
+    
+    setIsBlurred(true);
+    setIsRevealed(false);
+    
+    let time = 3;
+    setGraceTimeRemaining(time);
+    
+    selfDestructTimerRef.current = setInterval(() => {
+      time -= 1;
+      if (time <= 0) {
+        if (selfDestructTimerRef.current) {
+          clearInterval(selfDestructTimerRef.current);
+          selfDestructTimerRef.current = null;
+        }
+        setGraceTimeRemaining(null);
+        reportScreenshot();
+      } else {
+        setGraceTimeRemaining(time);
+      }
+    }, 1000);
+  }, [id, isSecurityReady]);
+
+  const clearGracePeriod = useCallback(() => {
+    if (selfDestructTimerRef.current) {
+      clearInterval(selfDestructTimerRef.current);
+      selfDestructTimerRef.current = null;
+    }
+    setGraceTimeRemaining(null);
+    setIsBlurred(false);
+  }, []);
+
   useEffect(() => {
-    const handleVisibilityChange = () => { if (document.hidden) { setIsBlurred(true); setIsRevealed(false); reportScreenshot(); } };
-    const handleWindowBlur = () => { setIsBlurred(true); setIsRevealed(false); reportScreenshot(); };
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        startGracePeriod();
+      } else {
+        clearGracePeriod();
+      }
+    };
+    const handleWindowBlur = () => {
+      startGracePeriod();
+    };
+    const handleWindowFocus = () => {
+      clearGracePeriod();
+    };
     const handleKeyDown = (e: KeyboardEvent) => {
       // Intercept standard screenshots, prints, copy keys, and devtools
       if (
@@ -388,6 +460,7 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
     window.addEventListener('keydown', handleKeyDown);
     document.addEventListener('contextmenu', handleContextMenu);
     document.addEventListener('copy', handleCopy);
@@ -398,16 +471,30 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
       window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('contextmenu', handleContextMenu);
       document.removeEventListener('copy', handleCopy);
       document.removeEventListener('cut', handleCopy);
       window.removeEventListener('beforeprint', handleBeforePrint);
       document.removeEventListener('mouseleave', handleMouseLeave);
+      if (selfDestructTimerRef.current) {
+        clearInterval(selfDestructTimerRef.current);
+      }
     };
-  }, [id, isSecurityReady]);
+  }, [id, isSecurityReady, startGracePeriod, clearGracePeriod]);
 
   useEffect(() => { document.title = 'Anonym — View Secure Message'; }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    Array.from(root.classList).forEach(cls => {
+      if (cls.startsWith('theme-')) root.classList.remove(cls);
+    });
+    if (theme !== 'amethyst') {
+      root.classList.add(`theme-${theme}`);
+    }
+  }, [theme]);
 
   /* ── Reveal handler ─────────────────────────── */
   const handleReveal = () => {
@@ -564,8 +651,12 @@ ${isImage ? `<img src="${decryptedFileUrl}" alt="Secure Attachment" oncontextmen
                   <ShieldAlert className="w-10 h-10" />
                 </div>
                 <h3 className="text-2xl font-bold tracking-tight mb-3">Security Lock</h3>
-                <p className="text-zinc-500 dark:text-zinc-400 text-sm mb-8 leading-relaxed">Screen capture or focus loss detected. Content hidden.</p>
-                <button id="btn-resecure-session" onClick={() => setIsBlurred(false)}
+                <p className="text-zinc-500 dark:text-zinc-400 text-sm mb-8 leading-relaxed">
+                  {graceTimeRemaining !== null 
+                    ? `Self-destructing in ${graceTimeRemaining}s... Return to window or click below to cancel.`
+                    : 'Screen capture or focus loss detected. Content hidden.'}
+                </p>
+                <button id="btn-resecure-session" onClick={clearGracePeriod}
                   className="w-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-medium py-4 rounded-full hover:bg-black dark:hover:bg-white transition-colors active:scale-[0.98] cursor-pointer">
                   Resecure Session & Resume
                 </button>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, Link, useNavigate } from 'react-router-dom';
 import { doc, getDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -18,7 +18,13 @@ export default function VaultView() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const [theme] = useState<'amethyst' | 'emerald' | 'amber' | 'slate'>(() => (localStorage.getItem('anonym_theme') as any) || 'amethyst');
+  const [theme] = useState<'amethyst' | 'emerald' | 'amber' | 'slate'>(() => {
+    try {
+      return (localStorage.getItem('anonym_color_theme') as any) || 'amethyst';
+    } catch {
+      return 'amethyst';
+    }
+  });
 
   const [items, setItems] = useState<VaultItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +49,8 @@ export default function VaultView() {
   // Security Focus States
   const [isBlurred, setIsBlurred] = useState(false);
   const [isSecurityReady, setIsSecurityReady] = useState(false);
+  const [graceTimeRemaining, setGraceTimeRemaining] = useState<number | null>(null);
+  const selfDestructTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   /* ── Get Security Tier ──────────────────────── */
   const getSecurityTier = () => {
@@ -82,19 +90,24 @@ export default function VaultView() {
 
   /* ── Fetch and decrypt vault ────────────────── */
   useEffect(() => {
+    let isMounted = true;
     const fetchVault = async () => {
       if (!id) return;
       try {
         const secretKey = location.hash.substring(1);
         if (!secretKey) {
-          setErrorType('generic');
-          setError('Decryption key is missing from the URL.');
-          setIsLoading(false);
+          if (isMounted) {
+            setErrorType('generic');
+            setError('Decryption key is missing from the URL.');
+            setIsLoading(false);
+          }
           return;
         }
 
         const docRef = doc(db, 'vaults', id);
         const docSnap = await getDoc(docRef);
+
+        if (!isMounted) return;
 
         let fetchedItems: VaultItem[] = [];
         let expiresAt = null;
@@ -222,11 +235,14 @@ export default function VaultView() {
           setError('This vault does not exist or has been incinerated.');
         }
       } catch (err) {
-        console.error(err);
-        setErrorType('generic');
-        setError('Failed to securely retrieve the vault.');
+        if (isMounted) {
+          setErrorType('generic');
+          setError('Failed to securely retrieve the vault.');
+        }
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
@@ -321,6 +337,16 @@ export default function VaultView() {
     }
   }, [isLoading]);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    Array.from(root.classList).forEach(cls => {
+      if (cls.startsWith('theme-')) root.classList.remove(cls);
+    });
+    if (theme !== 'amethyst') {
+      root.classList.add(`theme-${theme}`);
+    }
+  }, [theme]);
+
   /* ── Screenshot Guard (Window Blur) ────────── */
   const forceBurnOnCapture = async () => {
     if (!id || !isSecurityReady) return;
@@ -332,20 +358,56 @@ export default function VaultView() {
     deleteDoc(docRef).catch(() => {});
   };
 
+  const startGracePeriod = useCallback(() => {
+    if (!id || !isSecurityReady) return;
+    if (selfDestructTimerRef.current) return;
+    
+    setIsBlurred(true);
+    let time = 3;
+    setGraceTimeRemaining(time);
+    
+    selfDestructTimerRef.current = setInterval(() => {
+      time -= 1;
+      if (time <= 0) {
+        if (selfDestructTimerRef.current) {
+          clearInterval(selfDestructTimerRef.current);
+          selfDestructTimerRef.current = null;
+        }
+        setGraceTimeRemaining(null);
+        forceBurnOnCapture();
+      } else {
+        setGraceTimeRemaining(time);
+      }
+    }, 1000);
+  }, [id, isSecurityReady]);
+
+  const clearGracePeriod = useCallback(() => {
+    if (selfDestructTimerRef.current) {
+      clearInterval(selfDestructTimerRef.current);
+      selfDestructTimerRef.current = null;
+    }
+    setGraceTimeRemaining(null);
+    setIsBlurred(false);
+  }, []);
+
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        setIsBlurred(true);
-        forceBurnOnCapture();
+        startGracePeriod();
+      } else {
+        clearGracePeriod();
       }
     };
     const handleWindowBlur = () => {
-      setIsBlurred(true);
-      forceBurnOnCapture();
+      startGracePeriod();
+    };
+    const handleWindowFocus = () => {
+      clearGracePeriod();
     };
 
     window.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
 
     // Disable printscreen key / cut / copy / paste / right click on text
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -368,10 +430,14 @@ export default function VaultView() {
     return () => {
       window.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
       window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('contextmenu', preventContext);
+      if (selfDestructTimerRef.current) {
+        clearInterval(selfDestructTimerRef.current);
+      }
     };
-  }, [id, isSecurityReady]);
+  }, [id, isSecurityReady, startGracePeriod, clearGracePeriod]);
 
   /* ── Formats time string ────────────────────── */
   const formatTime = (secs: number) => {
@@ -399,7 +465,8 @@ export default function VaultView() {
   const secTier = getSecurityTier();
 
   return (
-    <div className={`min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col font-sans selection:bg-indigo-100 dark:selection:bg-indigo-900/30 transition-colors duration-200 antialiased relative overflow-x-hidden ${isBlurred ? 'blur-2xl select-none pointer-events-none' : ''} ${theme === 'amethyst' ? '' : 'theme-' + theme}`}>
+    <div className={`min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col font-sans selection:bg-indigo-100 dark:selection:bg-indigo-900/30 transition-colors duration-200 antialiased relative overflow-x-hidden ${theme === 'amethyst' ? '' : 'theme-' + theme}`}>
+      <div className={`flex-1 flex flex-col ${isBlurred ? 'blur-2xl select-none pointer-events-none' : ''}`}>
       {/* Background radial effects */}
       <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
         <div className="absolute top-[-20%] left-[-15%] w-[60%] h-[60%] rounded-full bg-radial from-indigo-500/8 dark:from-indigo-500/5 to-transparent blur-[100px]" />
@@ -673,6 +740,35 @@ export default function VaultView() {
           <span className="font-mono tracking-normal normal-case">© {new Date().getFullYear()} Anonym · Made by SUBH ROY</span>
         </div>
       </footer>
+      </div>
+
+      {/* Security lock blur overlay */}
+      <AnimatePresence>
+        {isBlurred && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center px-6 bg-zinc-50/80 dark:bg-zinc-950/85 backdrop-blur-xl">
+            <motion.div initial={{ scale: 0.9, y: 10 }} animate={{ scale: 1, y: 0 }}
+              className="bg-white dark:bg-zinc-900 p-8 sm:p-12 rounded-[32px] shadow-2xl border border-zinc-200 dark:border-zinc-800 text-center max-w-sm w-full relative overflow-hidden">
+              <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,#f4f4f5_10px,#f4f4f5_20px)] dark:bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,#18181b_10px,#18181b_20px)] opacity-30" />
+              <div className="relative z-10">
+                <div className="w-20 h-20 bg-amber-50 dark:bg-amber-950/30 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6 border border-amber-100 dark:border-amber-900/40">
+                  <ShieldAlert className="w-10 h-10" />
+                </div>
+                <h3 className="text-2xl font-bold tracking-tight mb-3">Security Lock</h3>
+                <p className="text-zinc-500 dark:text-zinc-400 text-sm mb-8 leading-relaxed">
+                  {graceTimeRemaining !== null 
+                    ? `Self-destructing in ${graceTimeRemaining}s... Return to window or click below to cancel.`
+                    : 'Screen capture or focus loss detected. Content hidden.'}
+                </p>
+                <button id="btn-resecure-session" onClick={clearGracePeriod}
+                  className="w-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-medium py-4 rounded-full hover:bg-black dark:hover:bg-white transition-colors active:scale-[0.98] cursor-pointer">
+                  Resecure Session & Resume
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

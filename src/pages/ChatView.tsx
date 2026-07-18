@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { db } from '../firebase';
-import { collection, doc, addDoc, onSnapshot, serverTimestamp, orderBy, query, deleteDoc, getDoc, setDoc, updateDoc, writeBatch, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, doc, addDoc, onSnapshot, serverTimestamp, orderBy, query, deleteDoc, getDoc, setDoc, updateDoc, writeBatch, arrayUnion, arrayRemove, deleteField } from 'firebase/firestore';
 import { ShieldAlert, Flame, Send, Loader2, ArrowLeft, Check, CheckCheck, Users, Shield, Copy, Eye, EyeOff, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import CryptoJS from 'crypto-js';
@@ -183,6 +183,24 @@ export default function ChatView() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
+  const [theme] = useState<'amethyst' | 'emerald' | 'amber' | 'slate'>(() => {
+    try {
+      return (localStorage.getItem('anonym_color_theme') as any) || 'amethyst';
+    } catch {
+      return 'amethyst';
+    }
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    Array.from(root.classList).forEach(cls => {
+      if (cls.startsWith('theme-')) root.classList.remove(cls);
+    });
+    if (theme !== 'amethyst') {
+      root.classList.add(`theme-${theme}`);
+    }
+  }, [theme]);
+
   // Custom Spy Name States
   const [customName, setCustomName] = useState(() => {
     return sessionStorage.getItem(`chat_name_${code}`) || '';
@@ -300,23 +318,42 @@ export default function ChatView() {
   }, [isLoading]);
 
   const reportScreenshotAttempt = async () => {
-    if (!code || isDestroyed || !isSecurityReady) return;
+    if (!code || isDestroyed || !isSecurityReady || !roomKey) return;
     try {
       const messagesRef = collection(db, 'rooms', code, 'messages');
       const spyName = customName || generateSpyName(userId);
+      const alertText = `SECURITY ALERT: ${spyName} attempted to screenshot or capture the chat!`;
+      const encryptedAlert = CryptoJS.AES.encrypt(alertText, roomKey).toString();
       await addDoc(messagesRef, {
         senderId: 'system',
         senderName: 'SYSTEM',
-        content: `SECURITY ALERT: ${spyName} attempted to screenshot or capture the chat!`,
+        content: encryptedAlert,
         createdAt: serverTimestamp()
       });
       
       const roomRef = doc(db, 'rooms', code);
-      await setDoc(roomRef, {
+      await updateDoc(roomRef, {
         lastActiveAt: serverTimestamp()
-      }, { merge: true });
+      });
     } catch (e) {
-      console.error("Failed to log security violation:", e);
+      console.warn("Failed to log security violation:", e);
+    }
+  };
+
+  const deleteRoomAndMessages = async (roomCode: string) => {
+    try {
+      const roomRef = doc(db, 'rooms', roomCode);
+      const messagesRef = collection(db, 'rooms', roomCode, 'messages');
+      const { getDocs } = await import('firebase/firestore');
+      const msgSnap = await getDocs(messagesRef);
+      const batch = writeBatch(db);
+      msgSnap.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+      await deleteDoc(roomRef);
+    } catch (e) {
+      console.error("Failed to delete room and messages:", e);
     }
   };
 
@@ -365,11 +402,18 @@ export default function ChatView() {
 
   // Listen for screen capture alerts from the other user
   useEffect(() => {
-    if (messages.length > 0) {
+    if (messages.length > 0 && roomKey) {
       const lastMsg = messages[messages.length - 1];
       if (lastMsg.senderId === 'system') {
+        let decryptedAlert = '';
+        try {
+          const bytes = CryptoJS.AES.decrypt(lastMsg.content, roomKey);
+          decryptedAlert = bytes.toString(CryptoJS.enc.Utf8);
+        } catch (e) {
+          console.warn("Failed to decrypt system alert content:", e);
+        }
         const spyName = customName || generateSpyName(userId);
-        if (!lastMsg.content.includes(spyName)) {
+        if (decryptedAlert && !decryptedAlert.includes(spyName)) {
           const alertKey = `alerted_chat_ss_${lastMsg.id}`;
           if (!sessionStorage.getItem(alertKey)) {
             sessionStorage.setItem(alertKey, 'true');
@@ -378,7 +422,7 @@ export default function ChatView() {
         }
       }
     }
-  }, [messages, userId, customName]);
+  }, [messages, userId, customName, roomKey]);
 
   // Name modal trigger after key configuration
   useEffect(() => {
@@ -409,32 +453,21 @@ export default function ChatView() {
             lastActiveAt: serverTimestamp(),
             createdAt: serverTimestamp(),
             presence: [userId],
-            keyHash: currentKeyHash,
-            roomKey: roomKey || ''
+            keyHash: currentKeyHash
           });
         } else {
           const data = snap.data();
           currentKeyHash = data?.keyHash || '';
           
           let activeKey = roomKey;
-          if (!activeKey && data?.roomKey) {
-            activeKey = data.roomKey;
-            setRoomKey(activeKey);
-            sessionStorage.setItem(`chat_key_${code}`, activeKey);
-            setIsKeyModalOpen(false);
-          }
           
-          // Self-healing: if keyHash or roomKey is missing in DB but we have roomKey locally, write them!
+          // Self-healing: if keyHash is missing in DB but we have roomKey locally, write it!
           const updates: Record<string, any> = {};
           let needsUpdate = false;
           
           if (!currentKeyHash && activeKey) {
             currentKeyHash = CryptoJS.SHA256(activeKey).toString();
             updates.keyHash = currentKeyHash;
-            needsUpdate = true;
-          }
-          if (!data?.roomKey && activeKey) {
-            updates.roomKey = activeKey;
             needsUpdate = true;
           }
           if (!data?.createdAt) {
@@ -488,7 +521,7 @@ export default function ChatView() {
             const remaining = Math.floor((lastActiveAt + 10 * 60 * 1000 - Date.now()) / 1000);
             if (remaining <= 0) {
               setIsDestroyed(true);
-              deleteDoc(roomRef).catch(() => {});
+              deleteRoomAndMessages(code).catch(() => {});
             } else {
               setTimeLeft(remaining);
             }
@@ -559,7 +592,8 @@ export default function ChatView() {
       if (code) {
         const rRef = doc(db, 'rooms', code);
         updateDoc(rRef, {
-          presence: arrayRemove(userId)
+          presence: arrayRemove(userId),
+          [`typing.${userId}`]: deleteField()
         }).catch(() => {});
       }
     };
@@ -571,7 +605,7 @@ export default function ChatView() {
     if (timeLeft <= 0) {
       setIsDestroyed(true);
       if (code) {
-        deleteDoc(doc(db, 'rooms', code)).catch(() => {});
+        deleteRoomAndMessages(code).catch(() => {});
       }
       return;
     }
@@ -610,19 +644,15 @@ export default function ChatView() {
 
     const roomRef = doc(db, 'rooms', code);
     
-    setDoc(roomRef, {
-      typing: {
-        [userId]: true
-      }
-    }, { merge: true }).catch(() => {});
+    updateDoc(roomRef, {
+      [`typing.${userId}`]: true
+    }).catch(() => {});
     
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
-      setDoc(roomRef, {
-        typing: {
-          [userId]: false
-        }
-      }, { merge: true }).catch(() => {});
+      updateDoc(roomRef, {
+        [`typing.${userId}`]: deleteField()
+      }).catch(() => {});
     }, 2000);
   };
 
@@ -649,12 +679,10 @@ export default function ChatView() {
         createdAt: serverTimestamp()
       });
       
-      await setDoc(roomRef, {
+      await updateDoc(roomRef, {
         lastActiveAt: serverTimestamp(),
-        typing: {
-          [userId]: false
-        }
-      }, { merge: true });
+        [`typing.${userId}`]: deleteField()
+      });
       
     } catch (err) {
       console.error(err);
@@ -667,13 +695,11 @@ export default function ChatView() {
     try {
       const msgRef = doc(db, 'rooms', code, 'messages', msgId);
       const users = currentReactions[emoji] || [];
-      await setDoc(msgRef, {
-        reactions: {
-          [emoji]: users.includes(userId) ? arrayRemove(userId) : arrayUnion(userId)
-        }
-      }, { merge: true });
+      await updateDoc(msgRef, {
+        [`reactions.${emoji}`]: users.includes(userId) ? arrayRemove(userId) : arrayUnion(userId)
+      });
     } catch(e) {
-      console.error(e);
+      console.error("Failed to update reaction:", e);
     }
   };
 
@@ -683,11 +709,7 @@ export default function ChatView() {
       'Are you sure you want to permanently incinerate this room and destroy all messages? This action cannot be undone.',
       async () => {
         if (!code) return;
-        try {
-          await deleteDoc(doc(db, 'rooms', code));
-        } catch (e) {
-          console.error("Failed to incinerate room:", e);
-        }
+        deleteRoomAndMessages(code);
       }
     );
   };
@@ -737,7 +759,7 @@ export default function ChatView() {
   }
   return (
     <div 
-      className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col font-sans relative select-none touch-none overflow-hidden transition-colors duration-200"
+      className={`min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col font-sans relative select-none touch-none overflow-hidden transition-colors duration-200 ${theme === 'amethyst' ? '' : 'theme-' + theme}`}
       onContextMenu={(e) => e.preventDefault()}
       style={{ WebkitUserSelect: 'none', userSelect: 'none' }}
     >
@@ -777,7 +799,7 @@ export default function ChatView() {
               <button 
                 id="btn-copy-invite-link"
                 onClick={handleCopyInviteLink}
-                className="text-[9px] bg-zinc-100 dark:bg-zinc-800 text-zinc-650 hover:bg-zinc-200 dark:text-zinc-350 hover:text-zinc-900 dark:hover:text-zinc-100 font-bold uppercase tracking-wider px-2.5 py-1 rounded-full transition-colors cursor-pointer border border-zinc-200/40 dark:border-zinc-700/50"
+                className="text-[9px] bg-zinc-100 dark:bg-zinc-800 text-zinc-600 hover:bg-zinc-200 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 font-bold uppercase tracking-wider px-2.5 py-1 rounded-full transition-colors cursor-pointer border border-zinc-200/40 dark:border-zinc-700/50"
               >
                 Invite Link
               </button>
@@ -886,7 +908,7 @@ export default function ChatView() {
                     value={keyInput}
                     onChange={(e) => setKeyInput(e.target.value)}
                     placeholder="Enter Shared E2E Key"
-                    className="w-full bg-zinc-105/60 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 p-3.5 rounded-xl text-sm outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100 text-zinc-900 dark:text-zinc-100 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-650"
+                    className="w-full bg-zinc-100/60 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 p-3.5 rounded-xl text-sm outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100 text-zinc-900 dark:text-zinc-100 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600"
                     autoFocus
                     required
                   />
@@ -962,7 +984,7 @@ export default function ChatView() {
                     value={nameInput}
                     onChange={(e) => setNameInput(e.target.value.slice(0, 15))}
                     placeholder="e.g. Agent-X"
-                    className="w-full bg-zinc-105/60 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 p-3.5 rounded-xl text-sm outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100 text-zinc-900 dark:text-zinc-100 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-650"
+                    className="w-full bg-zinc-100/60 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 p-3.5 rounded-xl text-sm outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100 text-zinc-900 dark:text-zinc-100 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600"
                     autoFocus
                   />
 
@@ -1048,6 +1070,18 @@ export default function ChatView() {
           <AnimatePresence initial={false}>
             {messages.map((msg, i) => {
               if (msg.senderId === 'system') {
+                let decryptedContent = msg.content;
+                if (roomKey) {
+                  try {
+                    const bytes = CryptoJS.AES.decrypt(msg.content, roomKey);
+                    const dec = bytes.toString(CryptoJS.enc.Utf8);
+                    if (dec) {
+                      decryptedContent = dec;
+                    }
+                  } catch (e) {
+                    console.warn("Failed to decrypt system alert:", e);
+                  }
+                }
                 return (
                   <motion.div
                     key={msg.id}
@@ -1056,8 +1090,8 @@ export default function ChatView() {
                     className="flex justify-center w-full my-4"
                   >
                     <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/30 text-rose-700 dark:text-rose-400 text-xs font-bold px-4 py-2.5 rounded-full uppercase tracking-wider flex items-center gap-2 shadow-sm animate-pulse">
-                      <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-450 shrink-0" />
-                      <span>{msg.content}</span>
+                      <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                      <span>{decryptedContent}</span>
                     </div>
                   </motion.div>
                 );
@@ -1270,7 +1304,7 @@ export default function ChatView() {
                     <>
                       <button
                         onClick={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
-                        className="flex-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-705 text-zinc-650 dark:text-zinc-350 font-medium py-3 rounded-full text-xs uppercase tracking-wider transition-colors active:scale-95 cursor-pointer border dark:border-zinc-700/50"
+                        className="flex-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 font-medium py-3 rounded-full text-xs uppercase tracking-wider transition-colors active:scale-95 cursor-pointer border dark:border-zinc-700/50"
                       >
                         Cancel
                       </button>

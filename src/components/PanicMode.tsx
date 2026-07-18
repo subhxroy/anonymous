@@ -9,6 +9,12 @@ export default function PanicMode({ children }: PanicModeProps) {
   const [isPanic, setIsPanic] = useState(false);
   const escPressTimesRef = useRef<number[]>([]);
 
+  const isPanicRef = useRef(isPanic);
+
+  useEffect(() => {
+    isPanicRef.current = isPanic;
+  }, [isPanic]);
+
   const triggerPanic = useCallback(() => {
     setIsPanic(true);
     // Blur any active input so there's no flash of content
@@ -24,8 +30,9 @@ export default function PanicMode({ children }: PanicModeProps) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const panicActive = isPanicRef.current;
       // If already in panic, ESC×2 dismisses
-      if (isPanic) {
+      if (panicActive) {
         if (e.key === 'Escape') {
           const now = Date.now();
           const recent = escPressTimesRef.current.filter(t => now - t < 600);
@@ -55,7 +62,7 @@ export default function PanicMode({ children }: PanicModeProps) {
 
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [isPanic, triggerPanic, dismissPanic]);
+  }, [triggerPanic, dismissPanic]);
 
   if (isPanic) {
     return <FakeCalculator onDismiss={dismissPanic} />;

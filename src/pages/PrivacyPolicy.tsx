@@ -46,7 +46,7 @@ export default function PrivacyPolicy() {
               <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1 uppercase tracking-widest font-mono">Last Updated: June 6, 2026</p>
             </div>
 
-            <div className="space-y-4 text-sm text-zinc-650 dark:text-zinc-350 leading-relaxed max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+            <div className="space-y-4 text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
               <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-base mt-2">1. Our Commitment to Zero Knowledge</h3>
               <p>
                 Anonym is built from the ground up on the principle of ephemeral communication. We operate on a zero-knowledge data design: we do not store, read, or monetize your secure whispers or chats. 

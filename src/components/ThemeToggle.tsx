@@ -49,6 +49,7 @@ export default function ThemeToggle() {
     }
   }, []); // Initial mount check handled by state initialization
 
+
   const toggle = () => {
     setIsDark(prev => {
       const next = !prev;
